@@ -182,6 +182,19 @@ def main():
         failures += 1
         print(f"[FAIL] authenticate -> {e}")
 
+    # 2b) getuserinfo (requires auth token)
+    try:
+        require(auth_token, "auth_token not available; authenticate must pass")
+        r = post({"action": "getuserinfo", "authToken": auth_token})
+        require(r.ok, f"getuserinfo failed: HTTP {r.status_code}")
+        j = r.json()
+        # require at least accountId and displayName/name
+        require(j.get("accountId") is not None, "accountId missing in userinfo")
+        print("[PASS] getuserinfo")
+    except Exception as e:
+        failures += 1
+        print(f"[FAIL] getuserinfo -> {e}")
+
     # 3) getfolders
     folders = []
     target_folder_id = None
@@ -254,7 +267,16 @@ def main():
         failures += 1
         print(f"[FAIL] getmessage -> {e}")
 
-    total = 4 + (1 if first_msg_id is not None else 0)
+    # Negative test: getuserinfo with bad token should not succeed
+    try:
+        r = post({"action": "getuserinfo", "authToken": "bad-token"})
+        require(r.status_code in (401, 403, 500), f"expected unauthorized/denied status, got {r.status_code}")
+        print("[PASS] getuserinfo (negative)")
+    except Exception as e:
+        failures += 1
+        print(f"[FAIL] getuserinfo (negative) -> {e}")
+
+    total = 5 + (1 if first_msg_id is not None else 0)
     passed = total - failures
     print(f"\nSummary: {passed}/{total} passed, {failures} failed")
     sys.exit(0 if failures == 0 else 1)

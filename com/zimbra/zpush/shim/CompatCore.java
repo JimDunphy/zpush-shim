@@ -81,5 +81,16 @@ public final class CompatCore {
         }
         return m;
     }
-}
 
+    public static Map<String, Object> getUserInfo() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("accountId", "dev-account");
+        m.put("name", "test@example.com");
+        m.put("displayName", "Dev User");
+        m.put("timezone", java.util.TimeZone.getDefault().getID());
+        m.put("locale", java.util.Locale.getDefault().toString());
+        m.put("quotaUsed", 123456L);
+        m.put("quotaLimit", 0L);
+        return m;
+    }
+}

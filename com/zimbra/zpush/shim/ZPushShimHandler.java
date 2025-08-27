@@ -61,6 +61,10 @@ public class ZPushShimHandler extends ExtensionHttpHandler {
                     if (isZimbraAvailable()) { writeJson(resp, zimbraGetMessage(req)); return; }
                     writeJson(resp, CompatCore.getMessage(req.getParameter("messageId"), str(req.getParameter("format"))));
                     return;
+                case "getuserinfo":
+                    if (isZimbraAvailable()) { writeJson(resp, zimbraGetUserInfo(req)); return; }
+                    writeJson(resp, CompatCore.getUserInfo());
+                    return;
                 default:
                     resp.setStatus(400);
                     writeRaw(resp, "{\"success\":false,\"error\":\"Unknown or missing action\"}");
@@ -560,5 +564,33 @@ public class ZPushShimHandler extends ExtensionHttpHandler {
         } catch (Exception e) {
             throw ServiceException.FAILURE("getMessage failed", e);
         }
+    }
+
+    private Map<String, Object> zimbraGetUserInfo(HttpServletRequest req) throws ServiceException {
+        String authToken = str(req.getParameter("authToken"));
+        if (authToken.isEmpty()) throw ServiceException.PERM_DENIED("missing token");
+        Account acc = accountFromToken(authToken);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("accountId", acc.getId());
+        m.put("name", acc.getName());
+        m.put("displayName", acc.getDisplayName());
+        try {
+            String tz = null;
+            try { tz = (String) acc.getClass().getMethod("getAttr", String.class).invoke(acc, "zimbraPrefTimeZoneId"); } catch (Throwable ignore2) {}
+            if (tz != null && !tz.isEmpty()) m.put("timezone", tz);
+        } catch (Throwable ignore) {}
+        try {
+            String loc = null;
+            try { loc = (String) acc.getClass().getMethod("getAttr", String.class).invoke(acc, "zimbraPrefLocale"); } catch (Throwable ignore2) {}
+            if (loc != null && !loc.isEmpty()) m.put("locale", loc);
+        } catch (Throwable ignore) {}
+        try {
+            Mailbox mbox = MailboxManager.getInstance().getMailboxByAccount(acc);
+            m.put("quotaUsed", mbox.getSize());
+        } catch (Throwable ignore) {}
+        try {
+            m.put("quotaLimit", acc.getMailQuota());
+        } catch (Throwable ignore) {}
+        return m;
     }
 }

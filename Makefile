@@ -1,6 +1,6 @@
 # Simple helpers for building and testing the Z-Push Java Shim
 
-.PHONY: help deps test-shim test-rest test-rest-shim run-dev test-dev auth-token auth-cookie auth-password verify-ping
+.PHONY: help deps test-shim test-rest test-rest-shim run-dev test-dev auth-token auth-cookie auth-password verify-ping verify-userinfo
 
 # Path to shim test configuration (override: make test-shim SHIM_CFG=path.yml)
 SHIM_CFG ?= test/shim-tests.yml
@@ -17,6 +17,7 @@ help:
 	@echo "  make auth-cookie  # Authenticate using cookie + optional CSRF from soap.json"
 	@echo "  make auth-password# Authenticate using username/password (URL-encoded)"
 	@echo "  make verify-ping  # POST action=ping to shim endpoint and print result"
+	@echo "  make verify-userinfo # Authenticate then call getuserinfo (requires jq)"
 
 deps:
 	@echo "Installing Python dependencies (requests, pyyaml)..."
@@ -64,3 +65,6 @@ verify-ping:
 	resp=$$(curl -sS -X POST -d 'action=ping' "$$url" || true); \
 	echo "$$resp"; \
 	echo "$$resp" | grep -q '"status":"ok"' && echo "[PASS] ping" || { echo "[FAIL] ping"; exit 1; }
+
+verify-userinfo:
+	@bash test/verify_userinfo.sh

@@ -2,6 +2,61 @@
 
 This document lists the changes introduced during the recent iteration, with reasons and impacts, so contributors and admins can see what was added and why.
 
+## 2025-08-26 (Zimbra 10 hardening, docs + tools)
+
+### Overview
+- Goal: Make the Java shim work end-to-end on Zimbra 10 with reliable authentication, folder/message retrieval, and clear operational visibility. Align docs and tooling (Ant, paths, scripts) with reality. Reduce deploy hazards.
+- Outcome: End-to-end tests pass (5/5). Robust auth on Zimbra 10, production handler with compatibility fallbacks, improved logs, safer undeploy, updated docs, and convenient Make targets + helper scripts.
+
+### Shim Implementation (Server-side)
+- Added production handler `com/zimbra/zpush/shim/ZPushShimHandler` and wired it via `ZPushShimExtension` (path: `/service/extension/zpush-shim`).
+- Authentication hardening:
+  - Accept header `X-Zimbra-Auth-Token` and param `zmAuthToken` (bypass cookie quirks).
+  - Resolve tokens via multiple APIs (AuthProvider/ZAuthToken) and, if needed, decode the hex tail to extract `accountId`; fetch Account via Provisioning.
+  - Added `AuthProvider.authenticate(Account, String, Map)` fallback with proper `AuthContext` (protocol=eas, user-agent, remote IP) for Zimbra 10.
+- Visibility:
+  - Logs each request: `zpush-shim action=<action> from=<ip>`.
+  - Logs token source/length and decoded token tail; logs success resolving accountId.
+- Data endpoints:
+  - getfolders: Lists folders via `Mailbox.getFolderList` with view/unread counts.
+  - getmessages: Compatible across variants. Uses SearchParams where available; falls back to `Mailbox.getItemList(...)` with multiple signatures; flexible result iteration; safe message extraction.
+  - getmessage: Fetch by id with common fields (subject/from/date/size/fragment).
+
+### Testing
+- `make test-shim` now passes (ping, authenticate, getfolders, getmessages, getmessage).
+- Added Make targets for quick auth flows:
+  - `make auth-token` (header token, one-shot SOAP + shim auth kept inline)
+  - `make auth-cookie` (cookie + optional CSRF)
+  - `make auth-password` (URL-encoded credentials)
+  - `make verify-ping` (simple ping verifier)
+- Moved helper scripts under `test/`: `shim-auth-token.sh`, `shim-auth-cookie.sh`, `shim-auth-password.sh`.
+
+### Deployment
+- Fixed `deploy-shim.sh --undeploy` to move the extension to `/opt/zimbra/lib/ext-disabled/<name>.bak.<ts>` so Zimbra does not accidentally auto-load backups from `lib/ext`.
+
+### Documentation
+- Standardized shim endpoint to `/service/extension/zpush-shim` across README.md, README-SHIM.md, INTERNALS-SHIM.md, docs/Zimbra-Calls.md, and docs/Shim-development.txt.
+- Replaced Maven instructions with Ant:
+  - Build: `ant clean jar` (outputs `dist/zpush-shim.jar`).
+  - Deploy: `./deploy-shim.sh --deploy` and restart mailboxd.
+- README.md troubleshooting: Added “Authentication to Shim” (cookies+CSRF vs header token; pointers to helper scripts).
+- README-SHIM.md file structure updated to match repo (com/zimbra/..., build.xml, dist/, test/).
+
+### Why These Changes
+- Zimbra 10 token and API variations were causing 401 and 500s. The new token resolution, Account fallback, and getmessages compatibility remove version brittleness and make failures observable.
+- Docs had drift (Maven/pom.xml, old shim path). Aligning to Ant + extension path avoids confusion and speeds setup.
+- Safer undeploy prevents accidental extension loading from `.bak` under `lib/ext`.
+
+### Impacts & Notes
+- End-to-end shim tests pass against Zimbra 10 (5/5).
+- Header-token auth can be used to bypass CSRF when needed; the harness still supports cookie+CSRF automatically.
+- Logging now makes diagnose→fix loops far faster (action, token source, decoded tail, and fallback traces).
+
+### Suggested Next Steps
+- Sweep docs/README.md to add the short “Auth Troubleshooting” block for consistency with README.md.
+- Consider exposing a `getuserinfo` action and add a matching test.
+- Optionally add rate-limited, optional debug logs for getmessages fallback paths in high‑load environments.
+
 ## Overview
 - Goal: Make the shim testable end-to-end both on Zimbra servers and on development machines without Zimbra installed.
 - Outcome: Minimal shim implementation (mock mode), standalone dev server, conditional build targets, dedicated tests, and documentation.
@@ -75,4 +130,3 @@ This document lists the changes introduced during the recent iteration, with rea
 - Add runtime Zimbra integration in `ZPushShimCompat` (detect classes and call Provisioning/Mailbox/Search APIs).
 - Extend actions as needed (e.g., `getUserInfo`) and update tests.
 - Optionally adjust deploy verification to allow HTTP 200 during early development phases.
-
