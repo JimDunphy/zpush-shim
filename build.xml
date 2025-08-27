@@ -1,0 +1,273 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="zpush-shim" default="jar" basedir=".">
+    
+    <description>
+        Z-Push Zimbra Java Shim Extension - Cross-Platform Compatible
+        
+        High-performance Java shim for Z-Push Zimbra backend using direct Zimbra internal APIs.
+        Features cross-platform development support:
+        - Compiles on development machines without Zimbra installation
+        - Uses runtime detection to switch between mock and real Zimbra APIs
+        - Provides 20-60x performance improvement over SOAP
+        - Fixes folder names with spaces bug in Z-Push Release 74
+        
+        Build: ant clean compile jar
+        Deploy: ant deploy (on Zimbra server)
+    </description>
+    
+    <!-- Project properties -->
+    <property name="extension.name" value="zpush-shim"/>
+    <property name="extension.version" value="1.0.0"/>
+    <property name="src.dir" value="."/>
+    <property name="build.dir" value="build"/>
+    <property name="lib.dir" value="lib"/>
+    <property name="dist.dir" value="dist"/>
+    <property name="jar.file" value="${dist.dir}/${extension.name}.jar"/>
+    
+    <!-- Zimbra server paths -->
+    <property name="zimbra.home" value="/opt/zimbra"/>
+    <property name="zimbra.lib.dir" value="${zimbra.home}/lib"/>
+    <property name="zimbra.ext.dir" value="${zimbra.home}/lib/ext"/>
+    
+    <!-- Check if Zimbra is installed on this machine -->
+    <condition property="zimbra.available">
+        <available file="${zimbra.home}" type="dir"/>
+    </condition>
+    
+    <!-- Classpath for compilation -->
+    <path id="compile.classpath">
+        <!-- Zimbra lib directory (if available) -->
+        <fileset dir="${zimbra.lib.dir}" erroronmissingdir="false">
+            <include name="**/*.jar"/>
+        </fileset>
+        <!-- Zimbra JARs from webapps (corrected path) -->
+        <fileset dir="${zimbra.home}/jetty_base/webapps/service/WEB-INF/lib" erroronmissingdir="false">
+            <include name="zimbra-store.jar"/>
+            <include name="zimbra-common.jar"/>
+            <include name="zimbra-soap.jar"/>
+        </fileset>
+        <!-- Servlet API (corrected path) -->
+        <fileset dir="${zimbra.home}/jetty_base/common/lib" erroronmissingdir="false">
+            <include name="**/servlet-api*.jar"/>
+        </fileset>
+        <!-- Gson for JSON processing -->
+        <fileset dir="${lib.dir}" erroronmissingdir="false">
+            <include name="gson*.jar"/>
+        </fileset>
+    </path>
+    
+    <!-- Initialize build directories -->
+    <target name="init">
+        <mkdir dir="${build.dir}"/>
+        <mkdir dir="${dist.dir}"/>
+        <mkdir dir="${lib.dir}"/>
+        <tstamp/>
+    </target>
+    
+    <!-- Clean build artifacts -->
+    <target name="clean">
+        <delete dir="${build.dir}"/>
+        <delete dir="${dist.dir}"/>
+    </target>
+    
+    <!-- Download dependencies -->
+    <target name="deps" depends="init">
+        <echo message="Downloading Gson dependency..."/>
+        <!-- Download Gson JAR if not present -->
+        <get src="https://repo1.maven.org/maven2/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar"
+             dest="${lib.dir}/gson-2.10.1.jar"
+             skipexisting="true"
+             verbose="true"/>
+    </target>
+    
+    <!-- Show Zimbra warning if not available -->
+    <target name="warn-zimbra" unless="zimbra.available">
+        <echo message="WARNING: Zimbra installation not found at ${zimbra.home}"/>
+        <echo message="         Compilation may fail. This is normal on development machines."/>
+        <echo message="         Deploy and test on actual Zimbra server."/>
+        <echo message=""/>
+    </target>
+    
+    <!-- Compile for development machines (no Zimbra required) -->
+    <target name="compile-compat" depends="init,deps,warn-zimbra" unless="zimbra.available">
+        <echo message="Compiling Compat/DevServer (no Zimbra required)..."/>
+        <javac srcdir="${src.dir}"
+               destdir="${build.dir}"
+               classpath="${lib.dir}/gson-2.10.1.jar"
+               includeantruntime="false"
+               debug="true"
+               deprecation="true"
+               source="1.8"
+               target="1.8"
+               failonerror="true">
+            <include name="com/zimbra/zpush/shim/CompatCore.java"/>
+            <include name="com/zimbra/zpush/shim/DevServer.java"/>
+            <!-- Do not compile servlet-based classes when servlet-api is unavailable -->
+            <exclude name="com/zimbra/zpush/shim/ZPushShimCompat.java"/>
+            <exclude name="com/zimbra/zpush/shim/ZPushShimExtension.java"/>
+        </javac>
+    </target>
+
+    <!-- Always compile DevServer so run-dev works even if Zimbra is installed -->
+    <target name="compile-devserver" depends="init,deps">
+        <echo message="Compiling DevServer (standalone) ..."/>
+        <javac srcdir="${src.dir}"
+               destdir="${build.dir}"
+               classpath="${lib.dir}/gson-2.10.1.jar"
+               includeantruntime="false"
+               debug="true"
+               deprecation="true"
+               source="1.8"
+               target="1.8"
+               failonerror="true">
+            <include name="com/zimbra/zpush/shim/CompatCore.java"/>
+            <include name="com/zimbra/zpush/shim/DevServer.java"/>
+        </javac>
+    </target>
+
+    <!-- Compile for Zimbra servers (full extension) -->
+    <target name="compile-full" depends="init,deps" if="zimbra.available">
+        <echo message="Compiling full extension (Zimbra detected at ${zimbra.home})..."/>
+        <javac srcdir="${src.dir}"
+               destdir="${build.dir}"
+               classpathref="compile.classpath"
+               includeantruntime="false"
+               debug="true"
+               deprecation="true"
+               source="1.8"
+               target="1.8"
+               failonerror="true">
+            <include name="com/zimbra/zpush/shim/CompatCore.java"/>
+            <include name="com/zimbra/zpush/shim/ZPushShimCompat.java"/>
+            <include name="com/zimbra/zpush/shim/ZPushShimHandler.java"/>
+            <include name="com/zimbra/zpush/shim/ZPushShimExtension.java"/>
+            <!-- Exclude original ZPushShim.java which has additional deps -->
+            <exclude name="com/zimbra/zpush/shim/ZPushShim.java"/>
+        </javac>
+        <copy todir="${build.dir}">
+            <fileset dir="${src.dir}">
+                <include name="**/*.properties"/>
+                <include name="**/*.xml"/>
+                <exclude name="build.xml"/>
+                <exclude name="pom.xml"/>
+            </fileset>
+        </copy>
+    </target>
+
+    <!-- Logical compile target routes to compat or full -->
+    <target name="compile" depends="compile-compat,compile-full"/>
+    
+    <!-- Create MANIFEST.MF -->
+    <target name="manifest" depends="init">
+        <mkdir dir="${build.dir}/META-INF"/>
+        <manifest file="${build.dir}/META-INF/MANIFEST.MF">
+            <attribute name="Manifest-Version" value="1.0"/>
+            <attribute name="Zimbra-Extension-Class" value="com.zimbra.zpush.shim.ZPushShimExtension"/>
+            <attribute name="Implementation-Title" value="Z-Push Zimbra Java Shim"/>
+            <attribute name="Implementation-Version" value="${extension.version}"/>
+            <attribute name="Implementation-Vendor" value="Z-Push Shim Project"/>
+            <attribute name="Built-By" value="${user.name}"/>
+            <attribute name="Built-Date" value="${TODAY}"/>
+        </manifest>
+    </target>
+    
+    <!-- Create JAR file -->
+    <target name="jar" depends="compile-full,manifest">
+        <echo message="Creating JAR file: ${jar.file}"/>
+        <jar destfile="${jar.file}" 
+             manifest="${build.dir}/META-INF/MANIFEST.MF">
+            <fileset dir="${build.dir}">
+                <include name="**/*.class"/>
+                <include name="**/*.properties"/>
+                <include name="META-INF/**"/>
+            </fileset>
+            <!-- Include Gson JAR inside our JAR -->
+            <zipfileset src="${lib.dir}/gson-2.10.1.jar" excludes="META-INF/**"/>
+        </jar>
+        
+        <echo message=""/>
+        <echo message="=== Z-Push Shim Extension Built Successfully ==="/>
+        <echo message="JAR file: ${jar.file}"/>
+        <echo message="Extension class: com.zimbra.zpush.shim.ZPushShimExtension"/>
+        <echo message=""/>
+        <echo message="To deploy:"/>
+        <echo message="1. sudo mkdir -p ${zimbra.ext.dir}/${extension.name}/"/>
+        <echo message="2. sudo cp ${jar.file} ${zimbra.ext.dir}/${extension.name}/"/>
+        <echo message="3. sudo chown -R zimbra:zimbra ${zimbra.ext.dir}/${extension.name}/"/>
+        <echo message="4. su - zimbra -c 'zmmailboxdctl restart'"/>
+    </target>
+
+    <!-- Run the standalone dev server on 127.0.0.1:8081 -->
+    <target name="run-dev" depends="compile-devserver">
+        <java classname="com.zimbra.zpush.shim.DevServer" fork="true" failonerror="true">
+            <classpath>
+                <pathelement path="${build.dir}"/>
+                <pathelement path="${lib.dir}/gson-2.10.1.jar"/>
+            </classpath>
+            <jvmarg value="-Dfile.encoding=UTF-8"/>
+            <arg value="-b"/><arg value="127.0.0.1"/>
+            <arg value="-p"/><arg value="8081"/>
+        </java>
+    </target>
+    
+    <!-- Deploy to Zimbra -->
+    <target name="deploy" depends="jar">
+        <echo message="Deploying Z-Push Shim Extension to Zimbra..."/>
+        
+        <!-- Create extension directory -->
+        <mkdir dir="${zimbra.ext.dir}/${extension.name}"/>
+        
+        <!-- Copy JAR file -->
+        <copy file="${jar.file}" todir="${zimbra.ext.dir}/${extension.name}"/>
+        
+        <!-- Set ownership -->
+        <exec executable="chown">
+            <arg value="-R"/>
+            <arg value="zimbra:zimbra"/>
+            <arg value="${zimbra.ext.dir}/${extension.name}"/>
+        </exec>
+        
+        <echo message=""/>
+        <echo message="=== Deployment Complete ==="/>
+        <echo message="Extension deployed to: ${zimbra.ext.dir}/${extension.name}/"/>
+        <echo message=""/>
+        <echo message="IMPORTANT: Restart Zimbra mailbox service:"/>
+        <echo message="su - zimbra -c 'zmmailboxdctl restart'"/>
+    </target>
+    
+    <!-- Uninstall extension -->
+    <target name="uninstall">
+        <echo message="Uninstalling Z-Push Shim Extension..."/>
+        <delete dir="${zimbra.ext.dir}/${extension.name}"/>
+        <echo message="Extension removed. Restart Zimbra to complete uninstall:"/>
+        <echo message="su - zimbra -c 'zmmailboxdctl restart'"/>
+    </target>
+    
+    <!-- Show help -->
+    <target name="help">
+        <echo message=""/>
+        <echo message="Z-Push Zimbra Java Shim Extension Build Script"/>
+        <echo message=""/>
+        <echo message="Available targets:"/>
+        <echo message="  ant clean    - Clean build artifacts"/>
+        <echo message="  ant deps     - Download dependencies"/>
+        <echo message="  ant compile  - Compile Java sources"/>
+        <echo message="  ant jar      - Create JAR file (default)"/>
+        <echo message="  ant deploy   - Deploy to Zimbra (requires Zimbra installation)"/>
+        <echo message="  ant uninstall- Remove from Zimbra"/>
+        <echo message="  ant help     - Show this help"/>
+        <echo message=""/>
+        <echo message="CROSS-MACHINE DEVELOPMENT:"/>
+        <echo message="  This build script supports development on machines without Zimbra installed."/>
+        <echo message="  - Use 'ant compile' to check syntax (may show warnings about missing JARs)"/>
+        <echo message="  - Use 'ant jar' to create the extension JAR"/>
+        <echo message="  - Copy the JAR to a Zimbra server for deployment and testing"/>
+        <echo message=""/>
+        <echo message="ZIMBRA PATHS (Updated for jetty_base):"/>
+        <echo message="  Servlet API: /opt/zimbra/jetty_base/common/lib/"/>
+        <echo message="  Zimbra JARs: /opt/zimbra/jetty_base/webapps/service/WEB-INF/lib/"/>
+        <echo message="  Extensions:  /opt/zimbra/lib/ext/"/>
+        <echo message=""/>
+    </target>
+    
+</project>

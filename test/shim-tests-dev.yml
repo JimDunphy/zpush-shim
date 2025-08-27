@@ -1,0 +1,11 @@
+base_url: "http://127.0.0.1:8081"
+shim_paths:
+  - "/service/extension/zpush-shim"
+account: "dev@example.com"
+password: "ignored-in-compat"
+protocol: "eas"
+verify_tls: false
+preferred_folder: "Inbox"
+messages_limit: 5
+getmessage_format: "html"
+

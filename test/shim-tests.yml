@@ -1,0 +1,23 @@
+# Shim endpoint tests configuration
+
+# Base mailboxd URL (use https://host or http://host:8080)
+base_url: "http://localhost:8080"
+
+# Preferred paths to try in order (first that responds 200 is used)
+shim_paths:
+  - "/service/extension/zpush-shim"
+  - "/service/zpush-shim"
+
+# Credentials for testing (use app password if 2FA is enabled)
+account: "user@example.com"
+password: "CHANGE_ME"
+protocol: "eas"
+
+# TLS verification for HTTPS endpoints
+verify_tls: false
+
+# Optional preferences
+preferred_folder: "Inbox"
+messages_limit: 10
+getmessage_format: "html"   # "plain" or "html"
+

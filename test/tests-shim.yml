@@ -1,0 +1,59 @@
+base_url: "http://127.0.0.1:8080"   # mailboxd (or change to https://host)
+verify_tls: false
+
+# Note: This file exercises the shim endpoints via the generic REST harness.
+# The shim mock implementation does not require authToken.
+
+defaults:
+  headers:
+    Content-Type: "application/x-www-form-urlencoded"
+
+tests:
+  - name: "Shim Ping (GET)"
+    method: GET
+    path: /service/extension/zpush-shim
+    expect:
+      status: 200
+      contains: '"status":"ok"'
+
+  - name: "Shim Ping (POST)"
+    method: POST
+    path: /service/extension/zpush-shim
+    body: action=ping
+    expect:
+      status: 200
+      contains: '"status":"ok"'
+
+  - name: "Shim Authenticate"
+    method: POST
+    path: /service/extension/zpush-shim
+    body: action=authenticate&username=test@example.com&password=ignored
+    expect:
+      status: 200
+      json:
+        success: true
+
+  - name: "Shim Get Folders"
+    method: POST
+    path: /service/extension/zpush-shim
+    body: action=getfolders
+    expect:
+      status: 200
+      contains: '"Inbox"'
+
+  - name: "Shim Get Messages (Inbox)"
+    method: POST
+    path: /service/extension/zpush-shim
+    body: action=getmessages&folderId=2&limit=5
+    expect:
+      status: 200
+      contains: '"subject"'
+
+  - name: "Shim Get Message"
+    method: POST
+    path: /service/extension/zpush-shim
+    body: action=getmessage&messageId=1000&format=html
+    expect:
+      status: 200
+      contains: '"body"'
+

@@ -1,0 +1,175 @@
+diff --git a/zimbra.php b/zimbra.php
+index 318d9a3..36b6b0c 100755
+--- a/zimbra.php
++++ b/zimbra.php
+@@ -1,5 +1,5 @@
+ <?php
+-$GLOBALS['revision'] = "74"; // Used to output the script version to the debug log
++$GLOBALS['revision'] = "74-SHIM"; // Used to output the script version to the debug log - SHIM ENABLED
+ /***********************************************
+ * File          :   zimbra.php
+ * Revision      :   74 (20-Aug-2025)
+@@ -597,6 +597,12 @@ class BackendZimbra extends BackendDiff {
+     protected $_xFwdForForMailboxLog;        
+ 	protected $_zimbraId = "";
+ 	protected $_waitSetId = "";
++	
++	// Z-Push Java Shim Integration
++	protected $_shimEnabled = false;
++	protected $_shimUrl = "";
++	protected $_authToken = "";
++	protected $_shimCurl = null;
+ 	protected $_highestSeqKnown = "";
+ 
+     protected $_changetoken = "";
+@@ -698,6 +704,107 @@ class BackendZimbra extends BackendDiff {
+         $this->changesSink = false;
+         $this->changesSinkFolders = array();
+         $this->changesSinkStores = array();
++        
++        // Initialize Java Shim if enabled
++        $this->_initializeShim();
++    }
++
++    /**
++     * Initialize Java Shim integration
++     */
++    private function _initializeShim() {
++        // Check if Java Shim is enabled
++        if (defined('ZIMBRA_USE_JAVA_SHIM') && ZIMBRA_USE_JAVA_SHIM === true) {
++            $this->_shimEnabled = true;
++            
++            // Set shim URL (Zimbra extension path)
++            if (defined('ZIMBRA_SHIM_URL')) {
++                $this->_shimUrl = ZIMBRA_SHIM_URL;
++            } else {
++                $this->_shimUrl = 'http://localhost:8080/service/extension/zpush-shim';
++            }
++            
++            // Initialize cURL for shim calls
++            $this->_shimCurl = curl_init();
++            curl_setopt($this->_shimCurl, CURLOPT_RETURNTRANSFER, true);
++            curl_setopt($this->_shimCurl, CURLOPT_POST, true);
++            curl_setopt($this->_shimCurl, CURLOPT_CONNECTTIMEOUT, 10);
++            curl_setopt($this->_shimCurl, CURLOPT_TIMEOUT, 30);
++            curl_setopt($this->_shimCurl, CURLOPT_USERAGENT, 'Z-Push-Shim-Client/1.0');
++            
++            ZLog::Write(LOGLEVEL_DEBUG, 'Zimbra->_initializeShim(): Java Shim enabled at ' . $this->_shimUrl);
++        }
++    }
++    
++    /**
++     * Call Java Shim with fallback to SOAP
++     */
++    private function _callShim($action, $params = array()) {
++        if (!$this->_shimEnabled || !$this->_shimCurl) {
++            return false; // Fall back to SOAP
++        }
++        
++        try {
++            // Add auth token if available
++            if ($this->_authToken) {
++                $params['authToken'] = $this->_authToken;
++            }
++            
++            $params['action'] = $action;
++            
++            // Prepare POST data
++            $postData = http_build_query($params);
++            
++            curl_setopt($this->_shimCurl, CURLOPT_URL, $this->_shimUrl);
++            curl_setopt($this->_shimCurl, CURLOPT_POSTFIELDS, $postData);
++            
++            $response = curl_exec($this->_shimCurl);
++            $httpCode = curl_getinfo($this->_shimCurl, CURLINFO_HTTP_CODE);
++            
++            if ($response === false || $httpCode !== 200) {
++                $error = curl_error($this->_shimCurl);
++                ZLog::Write(LOGLEVEL_WARN, 'Zimbra->_callShim(): Shim call failed, falling back to SOAP. Error: ' . $error);
++                return false; // Fall back to SOAP
++            }
++            
++            $result = json_decode($response, true);
++            if ($result === null) {
++                ZLog::Write(LOGLEVEL_WARN, 'Zimbra->_callShim(): Invalid JSON response from shim, falling back to SOAP');
++                return false; // Fall back to SOAP
++            }
++            
++            if (isset($result['success']) && $result['success'] === false) {
++                ZLog::Write(LOGLEVEL_WARN, 'Zimbra->_callShim(): Shim returned error: ' . $result['error']);
++                return false; // Fall back to SOAP
++            }
++            
++            ZLog::Write(LOGLEVEL_DEBUG, 'Zimbra->_callShim(): Successful shim call for action: ' . $action);
++            return $result;
++            
++        } catch (Exception $e) {
++            ZLog::Write(LOGLEVEL_WARN, 'Zimbra->_callShim(): Exception in shim call, falling back to SOAP: ' . $e->getMessage());
++            return false; // Fall back to SOAP
++        }
++    }
++    
++    /**
++     * Authenticate using Java Shim
++     */
++    private function _shimAuth($username, $password) {
++        $result = $this->_callShim('authenticate', array(
++            'username' => $username,
++            'password' => $password,
++            'protocol' => 'eas'
++        ));
++        
++        if ($result && isset($result['authToken'])) {
++            $this->_authToken = $result['authToken'];
++            $this->_accountName = $result['email'];
++            $this->_zimbraId = $result['accountId'];
++            return true;
++        }
++        
++        return false;
+     }
+ 
+ 
+@@ -1005,15 +1112,35 @@ class BackendZimbra extends BackendDiff {
+             $returnJSON = false;
+             ZLog::Write(LOGLEVEL_DEBUG, 'Zimbra->Logon(): ' .  'ReturnJSON = false');		   
+         }
+-        $body    = '<AuthRequest xmlns="urn:zimbraAccount">
+-                        <account by="name">'.$this->_username.'</account>
+-                        <password>'.$this->_password.'</password>
+-                        <attrs><attr name="uid"/></attrs>
+-                        <prefs><pref name="zimbraPrefTimeZoneId"/></prefs>
+-                    </AuthRequest>';
++        
++        // Try Java Shim authentication first
++        if ($this->_shimEnabled) {
++            ZLog::Write(LOGLEVEL_DEBUG, 'Zimbra->Logon(): Attempting authentication via Java Shim');
++            if ($this->_shimAuth($this->_username, $this->_password)) {
++                ZLog::Write(LOGLEVEL_DEBUG, 'Zimbra->Logon(): Java Shim authentication successful');
++                $this->_connected = true;
++                // Skip SOAP authentication and proceed to folder loading
++                $response = array('success' => true); // Fake response to continue
++                $skip_soap_auth = true;
++            } else {
++                ZLog::Write(LOGLEVEL_DEBUG, 'Zimbra->Logon(): Java Shim authentication failed, falling back to SOAP');
++                $skip_soap_auth = false;
++            }
++        } else {
++            $skip_soap_auth = false;
++        }
++        
++        if (!$skip_soap_auth) {
++            $body    = '<AuthRequest xmlns="urn:zimbraAccount">
++                            <account by="name">'.$this->_username.'</account>
++                            <password>'.$this->_password.'</password>
++                            <attrs><attr name="uid"/></attrs>
++                            <prefs><pref name="zimbraPrefTimeZoneId"/></prefs>
++                        </AuthRequest>';
+ 
+ 
+-        $response = $this->SoapRequest($body, $header, true, $returnJSON);
++            $response = $this->SoapRequest($body, $header, true, $returnJSON);
++        }
+ 
+ //        $info = curl_getinfo( $this->_curl );
+ //        ZLog::Write(LOGLEVEL_INFO, 'Zimbra->Logon(): ' . 'CurlInfo (After): ' . print_r( $info, true ) );

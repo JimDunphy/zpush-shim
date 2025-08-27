@@ -1,0 +1,33 @@
+base_url: "https://mail.example.com"   # mailboxd URL; can be https://host or https://host:8443
+verify_tls: true                        # set false if you have lab/self-signed
+
+auth:
+  account: "user@example.com"
+  password: "YOUR_PASSWORD"            # or app password
+  # one of the following if using 2FA:
+  # totp_code: "123456"                 # directly provide the current code
+  # totp_cmd: "oathtool -b --totp YOUR_BASE32_SECRET"   # will run and trim output
+  trusted_device: true                  # request a trusted device token to minimize future 2FA prompts
+
+defaults:
+  headers:
+    Content-Type: "application/json"
+
+tests:
+  - name: "Health"
+    method: GET
+    path: /service/extension/version/check    # any GET that your app exposes
+    expect:
+      status: 200
+      contains: "version"
+
+  - name: "Create thing"
+    method: POST
+    path: /api/things
+    body:
+      name: "demo"
+    expect:
+      status: 201
+      json:
+        name: "demo"
+
