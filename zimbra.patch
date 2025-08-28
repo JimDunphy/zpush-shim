@@ -1,7 +1,5 @@
-diff --git a/zimbra.php b/zimbra.php
-index 318d9a3..36b6b0c 100755
---- a/zimbra.php
-+++ b/zimbra.php
+--- original-zpush/zimbra.php	2025-08-27 09:53:51.434585458 -0700
++++ zimbra.php	2025-08-28 11:09:25.255448794 -0700
 @@ -1,5 +1,5 @@
  <?php
 -$GLOBALS['revision'] = "74"; // Used to output the script version to the debug log
@@ -9,7 +7,7 @@ index 318d9a3..36b6b0c 100755
  /***********************************************
  * File          :   zimbra.php
  * Revision      :   74 (20-Aug-2025)
-@@ -597,6 +597,12 @@ class BackendZimbra extends BackendDiff {
+@@ -597,6 +597,12 @@
      protected $_xFwdForForMailboxLog;        
  	protected $_zimbraId = "";
  	protected $_waitSetId = "";
@@ -22,7 +20,7 @@ index 318d9a3..36b6b0c 100755
  	protected $_highestSeqKnown = "";
  
      protected $_changetoken = "";
-@@ -698,6 +704,107 @@ class BackendZimbra extends BackendDiff {
+@@ -698,6 +704,114 @@
          $this->changesSink = false;
          $this->changesSinkFolders = array();
          $this->changesSinkStores = array();
@@ -118,19 +116,26 @@ index 318d9a3..36b6b0c 100755
 +            'password' => $password,
 +            'protocol' => 'eas'
 +        ));
-+        
-+        if ($result && isset($result['authToken'])) {
++
++        if (is_array($result) && isset($result['success']) && $result['success'] && isset($result['authToken'])) {
++            // Store the shim session token (distinct from SOAP auth token)
 +            $this->_authToken = $result['authToken'];
-+            $this->_accountName = $result['email'];
-+            $this->_zimbraId = $result['accountId'];
++            // Use provided identifiers when available
++            if (isset($result['accountId'])) $this->_zimbraId = $result['accountId'];
++            // Prefer explicit name fields if present, otherwise keep the login name
++            if (isset($result['name'])) {
++                $this->_accountName = $result['name'];
++            } else {
++                $this->_accountName = $username;
++            }
 +            return true;
 +        }
-+        
++
 +        return false;
      }
  
  
-@@ -1005,15 +1112,35 @@ class BackendZimbra extends BackendDiff {
+@@ -1005,15 +1119,33 @@
              $returnJSON = false;
              ZLog::Write(LOGLEVEL_DEBUG, 'Zimbra->Logon(): ' .  'ReturnJSON = false');		   
          }
@@ -141,15 +146,13 @@ index 318d9a3..36b6b0c 100755
 -                        <prefs><pref name="zimbraPrefTimeZoneId"/></prefs>
 -                    </AuthRequest>';
 +        
-+        // Try Java Shim authentication first
++        // Try Java Shim credential validation first (still perform SOAP login to establish session)
 +        if ($this->_shimEnabled) {
 +            ZLog::Write(LOGLEVEL_DEBUG, 'Zimbra->Logon(): Attempting authentication via Java Shim');
 +            if ($this->_shimAuth($this->_username, $this->_password)) {
 +                ZLog::Write(LOGLEVEL_DEBUG, 'Zimbra->Logon(): Java Shim authentication successful');
-+                $this->_connected = true;
-+                // Skip SOAP authentication and proceed to folder loading
-+                $response = array('success' => true); // Fake response to continue
-+                $skip_soap_auth = true;
++                // Do not skip SOAP authentication; we still need a SOAP session for data operations
++                $skip_soap_auth = false;
 +            } else {
 +                ZLog::Write(LOGLEVEL_DEBUG, 'Zimbra->Logon(): Java Shim authentication failed, falling back to SOAP');
 +                $skip_soap_auth = false;

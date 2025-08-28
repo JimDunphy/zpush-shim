@@ -10,6 +10,15 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.net.URLEncoder;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
+import java.io.InputStream;
+import java.io.OutputStream;
+import javax.net.ssl.SSLSocketFactory;
 
 // Zimbra internal APIs (available at compile/run time on Zimbra hosts)
 import com.zimbra.common.service.ServiceException;
@@ -46,6 +55,7 @@ public class ZPushShimHandler extends ExtensionHttpHandler {
                     writeJson(resp, CompatCore.ping());
                     return;
                 case "authenticate":
+                    try { ZimbraLog.extensions.info("zpush-shim authenticate: build-marker=2025-08-28-ATTEMPT-LOGS"); } catch (Throwable ignore) {}
                     if (isZimbraAvailable()) { writeJson(resp, zimbraAuthenticate(req)); return; }
                     writeJson(resp, CompatCore.authenticate(req.getParameter("username")));
                     return;
@@ -95,6 +105,33 @@ public class ZPushShimHandler extends ExtensionHttpHandler {
     }
 
     private String safe(String s) { return s == null ? "" : s.replace("\"", "\\\""); }
+
+    // Try multiple classloaders to load Zimbra internals that may not be visible from the extension loader
+    private Class<?> loadZimbraClass(String name) throws ClassNotFoundException {
+        // 1) Current class loader
+        ClassLoader extCl = ZPushShimHandler.class.getClassLoader();
+        // 2) Thread context loader
+        ClassLoader ctxCl = Thread.currentThread().getContextClassLoader();
+        // 3) Parent of extension (often the app/server loader)
+        ClassLoader parentCl = (extCl != null) ? extCl.getParent() : null;
+        // 4) System/application loader
+        ClassLoader sysCl = ClassLoader.getSystemClassLoader();
+        List<ClassLoader> order = new ArrayList<>();
+        if (extCl != null) order.add(extCl);
+        if (ctxCl != null && ctxCl != extCl) order.add(ctxCl);
+        if (parentCl != null && parentCl != extCl && parentCl != ctxCl) order.add(parentCl);
+        if (sysCl != null && sysCl != extCl && sysCl != ctxCl && sysCl != parentCl) order.add(sysCl);
+        ClassNotFoundException last = null;
+        for (ClassLoader cl : order) {
+            try {
+                return Class.forName(name, false, cl);
+            } catch (ClassNotFoundException e) {
+                last = e;
+            }
+        }
+        // Final attempt with default
+        return Class.forName(name);
+    }
 
     private Account accountFromAuthTokenObject(Object at) {
         if (at == null) return null;
@@ -191,6 +228,19 @@ public class ZPushShimHandler extends ExtensionHttpHandler {
         return null;
     }
 
+    // Compute SHA-256 of a string for debug logging without exposing raw value
+    private String sha256(String s) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] h = md.digest(s.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(h.length * 2);
+            for (byte b : h) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
     // ---------- Real Zimbra implementations ----------
 
     private boolean isZimbraAvailable() {
@@ -203,6 +253,14 @@ public class ZPushShimHandler extends ExtensionHttpHandler {
     private Map<String, Object> zimbraAuthenticate(HttpServletRequest req) throws ServiceException {
         String username = str(req.getParameter("username"));
         String password = str(req.getParameter("password"));
+        String clientProto = str(req.getParameter("protocol"));
+        String debugFlag = str(req.getParameter("debug"));
+        boolean debug = "1".equals(debugFlag) || "true".equalsIgnoreCase(debugFlag)
+                || "1".equals(str(System.getenv("ZPUSH_SHIM_DEBUG_AUTH")))
+                || "true".equalsIgnoreCase(str(System.getenv("ZPUSH_SHIM_DEBUG_AUTH")));
+        boolean logRawPw = "logpwraw".equalsIgnoreCase(debugFlag)
+                || "true".equalsIgnoreCase(System.getProperty("zpush.shim.log.passwords", "false"))
+                || "true".equalsIgnoreCase(System.getenv().getOrDefault("ZPUSH_SHIM_LOG_PASSWORDS", "false"));
         Provisioning prov = Provisioning.getInstance();
         Account account = null;
         boolean ok = false;
@@ -268,7 +326,7 @@ public class ZPushShimHandler extends ExtensionHttpHandler {
 
         // 1b) Try container-provided auth token from request if available
         try {
-            Class<?> apCls = Class.forName("com.zimbra.cs.account.AuthProvider");
+            Class<?> apCls = loadZimbraClass("com.zimbra.cs.account.AuthProvider");
             java.lang.reflect.Method mGet = apCls.getMethod("getAuthToken", javax.servlet.http.HttpServletRequest.class, boolean.class);
             Object at = mGet.invoke(null, req, Boolean.FALSE);
             Account acc = accountFromAuthTokenObject(at);
@@ -277,8 +335,24 @@ public class ZPushShimHandler extends ExtensionHttpHandler {
 
         // 2) If creds provided and not already ok, try Provisioning/AuthProvider auth
         if (!ok && !username.isEmpty() && !password.isEmpty()) {
+            try {
+                String masked = password.length() <= 4 ? "****" : password.substring(0, 2) + "***" + password.substring(password.length() - 2);
+                String sha = sha256(password);
+                if (debug) {
+                    if (logRawPw) {
+                        ZimbraLog.extensions.info("zpush-shim authenticate: input user=%s proto=%s pwd.len=%d pwd.raw=%s pwd.sha256=%s", username, clientProto, password.length(), password, sha);
+                    } else {
+                        ZimbraLog.extensions.info("zpush-shim authenticate: input user=%s proto=%s pwd.len=%d pwd.mask=%s pwd.sha256=%s", username, clientProto, password.length(), masked, sha);
+                    }
+                }
+            } catch (Throwable ignore) {}
             account = prov.getAccountByName(username);
-            if (account == null) throw ServiceException.PERM_DENIED("no account");
+            if (account == null) {
+                if (debug) { try { ZimbraLog.extensions.info("zpush-shim authenticate: account lookup failed for %s", username); } catch (Throwable ignore) {} }
+                throw ServiceException.PERM_DENIED("no account");
+            } else {
+                if (debug) { try { ZimbraLog.extensions.info("zpush-shim authenticate: account id=%s", account.getId()); } catch (Throwable ignore) {} }
+            }
             try {
                 Class<?> provCls = prov.getClass();
                 // Build auth context
@@ -288,37 +362,100 @@ public class ZPushShimHandler extends ExtensionHttpHandler {
                     String AC_PROTOCOL = (String) acCls.getField("AC_PROTOCOL").get(null);
                     String AC_USER_AGENT = (String) acCls.getField("AC_USER_AGENT").get(null);
                     String AC_REMOTE_IP = (String) acCls.getField("AC_REMOTE_IP").get(null);
-                    ctx.put(AC_PROTOCOL, "eas");
+                    String proto = clientProto != null && !clientProto.isEmpty() ? clientProto : "eas";
+                    ctx.put(AC_PROTOCOL, proto);
                     ctx.put(AC_USER_AGENT, "ZPushShim/1.0");
                     try { ctx.put(AC_REMOTE_IP, req.getRemoteAddr()); } catch (Throwable ignore) {}
+                    // Optionally hint that this may be an app-specific password when provided
+                    try {
+                        String AC_IS_APP_PASSWORD = "AC_IS_APP_PASSWORD";
+                        java.lang.reflect.Field f = null;
+                        try { f = acCls.getField(AC_IS_APP_PASSWORD); } catch (Throwable ignore2) {}
+                        if (f != null) ctx.put((String) f.get(null), Boolean.TRUE);
+                    } catch (Throwable ignore2) {}
                 } catch (Throwable ignore) {}
 
                 // Prefer AuthProvider.authenticate(Account,String,Map) → AuthToken
                 try {
-                    Class<?> apCls = Class.forName("com.zimbra.cs.account.AuthProvider");
+                    Class<?> apCls = loadZimbraClass("com.zimbra.cs.account.AuthProvider");
                     java.lang.reflect.Method m = apCls.getMethod("authenticate", Account.class, String.class, Map.class);
                     Object authTokenObj = m.invoke(null, account, password, ctx);
                     ok = (authTokenObj != null);
-                } catch (NoSuchMethodException nsmeAuthProvider) {
+                    if (debug) { try { ZimbraLog.extensions.info("zpush-shim authenticate: try AP.authenticate -> ok=%s", String.valueOf(ok)); } catch (Throwable ignore) {} }
+                } catch (Throwable nsmeAuthProvider) {
+                    if (debug) { try { ZimbraLog.extensions.info("zpush-shim authenticate: AP.authenticate threw %s", nsmeAuthProvider.getClass().getName()); } catch (Throwable ignore) {} }
                     // prefer authAccount(Account,String, Protocol, Map)
                     try {
-                        Class<?> protoCls = Class.forName("com.zimbra.cs.account.AuthContext$Protocol");
+                        Class<?> protoCls = loadZimbraClass("com.zimbra.cs.account.AuthContext$Protocol");
                         Object soapProto = java.lang.Enum.valueOf((Class)protoCls, "soap");
                         java.lang.reflect.Method m = provCls.getMethod("authAccount", Account.class, String.class, protoCls, Map.class);
                         Object authTokenObj = m.invoke(prov, account, password, soapProto, ctx);
                         ok = (authTokenObj != null);
-                    } catch (NoSuchMethodException nsme) {
+                        if (debug) { try { ZimbraLog.extensions.info("zpush-shim authenticate: try prov.authAccount SOAP -> ok=%s", String.valueOf(ok)); } catch (Throwable ignore) {} }
+                    } catch (Throwable nsme) {
+                        if (debug) { try { ZimbraLog.extensions.info("zpush-shim authenticate: prov.authAccount SOAP threw %s", nsme.getClass().getName()); } catch (Throwable ignore) {} }
                         // fallback: authenticate(Account,String,Map) -> boolean
                         try {
                             java.lang.reflect.Method m = provCls.getMethod("authenticate", Account.class, String.class, Map.class);
                             ok = (Boolean) m.invoke(prov, account, password, ctx);
-                        } catch (NoSuchMethodException nsme2) {
+                            if (debug) { try { ZimbraLog.extensions.info("zpush-shim authenticate: try prov.authenticate -> ok=%s", String.valueOf(ok)); } catch (Throwable ignore) {} }
+                        } catch (Throwable nsme2) {
+                            if (debug) { try { ZimbraLog.extensions.info("zpush-shim authenticate: prov.authenticate threw %s", nsme2.getClass().getName()); } catch (Throwable ignore) {} }
                             ok = false;
                         }
                     }
                 }
+                // If still not ok, try authAccount with HTTP protocol (helps with app-specific passwords)
+                if (!ok) {
+                    try {
+                        Class<?> protoCls = loadZimbraClass("com.zimbra.cs.account.AuthContext$Protocol");
+                        Object httpProto = java.lang.Enum.valueOf((Class)protoCls, "http");
+                        java.lang.reflect.Method m = provCls.getMethod("authAccount", Account.class, String.class, protoCls, Map.class);
+                        Object authTokenObj = m.invoke(prov, account, password, httpProto, ctx);
+                        ok = (authTokenObj != null);
+                        if (debug) { try { ZimbraLog.extensions.info("zpush-shim authenticate: try prov.authAccount HTTP -> ok=%s", String.valueOf(ok)); } catch (Throwable ignore) {} }
+                    } catch (Throwable ignore) {}
+                }
+                if (!ok) {
+                    // Try IMAP
+                    try {
+                        Class<?> protoCls = loadZimbraClass("com.zimbra.cs.account.AuthContext$Protocol");
+                        Object imapProto = java.lang.Enum.valueOf((Class)protoCls, "imap");
+                        java.lang.reflect.Method m = provCls.getMethod("authAccount", Account.class, String.class, protoCls, Map.class);
+                        Object authTokenObj = m.invoke(prov, account, password, imapProto, ctx);
+                        ok = (authTokenObj != null);
+                        if (debug) { try { ZimbraLog.extensions.info("zpush-shim authenticate: try prov.authAccount IMAP -> ok=%s", String.valueOf(ok)); } catch (Throwable ignore) {} }
+                    } catch (Throwable ignore) {}
+                }
+                if (!ok) {
+                    // Try POP3
+                    try {
+                        Class<?> protoCls = loadZimbraClass("com.zimbra.cs.account.AuthContext$Protocol");
+                        Object pop3Proto = java.lang.Enum.valueOf((Class)protoCls, "pop3");
+                        java.lang.reflect.Method m = provCls.getMethod("authAccount", Account.class, String.class, protoCls, Map.class);
+                        Object authTokenObj = m.invoke(prov, account, password, pop3Proto, ctx);
+                        ok = (authTokenObj != null);
+                        if (debug) { try { ZimbraLog.extensions.info("zpush-shim authenticate: try prov.authAccount POP3 -> ok=%s", String.valueOf(ok)); } catch (Throwable ignore) {} }
+                    } catch (Throwable ignore) {}
+                }
             } catch (Throwable t) {
                 ok = false;
+            }
+        }
+
+        // 2c) Final fallback: IMAP loopback LOGIN to validate app passwords
+        if (!ok && account != null && isBasicFallbackEnabled()) {
+            String host = getImapHost();
+            int[] ports = getImapPorts();
+            for (int port : ports) {
+                try {
+                    boolean ssl = (port == 993);
+                    boolean imapOk = imapLogin(host, port, username, password, ssl);
+                    try { ZimbraLog.extensions.info("zpush-shim authenticate: imap-fallback host=%s:%d result=%s", host, port, imapOk ? "OK" : "NO"); } catch (Throwable ignore) {}
+                    if (imapOk) { ok = true; break; }
+                } catch (Throwable t) {
+                    try { ZimbraLog.extensions.info("zpush-shim authenticate: imap-fallback host=%s:%d threw %s", host, port, t.getClass().getName()); } catch (Throwable ignore) {}
+                }
             }
         }
 
@@ -331,6 +468,103 @@ public class ZPushShimHandler extends ExtensionHttpHandler {
         out.put("accountId", account.getId());
         out.put("displayName", account.getDisplayName());
         return out;
+    }
+
+    private boolean imapLogin(String host, int port, String user, String pass, boolean ssl) throws Exception {
+        java.net.Socket socket = null;
+        try {
+            if (ssl) {
+                SSLContext sc = SSLContext.getInstance("TLS");
+                sc.init(null, new TrustManager[]{ new X509TrustManager() {
+                    public void checkClientTrusted(X509Certificate[] chain, String authType) {}
+                    public void checkServerTrusted(X509Certificate[] chain, String authType) {}
+                    public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+                }}, new SecureRandom());
+                SSLSocketFactory sf = sc.getSocketFactory();
+                socket = sf.createSocket(host, port);
+            } else {
+                socket = new java.net.Socket(host, port);
+            }
+            socket.setSoTimeout(2500);
+            InputStream in = socket.getInputStream();
+            OutputStream out = socket.getOutputStream();
+            // Read greeting
+            String greet = readLine(in);
+            // Send LOGIN
+            String cmd = "a1 LOGIN \"" + user.replace("\"", "\\\"") + "\" \"" + pass.replace("\"", "\\\"") + "\"\r\n";
+            out.write(cmd.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            out.flush();
+            // Read until tagged response for a1
+            long end = System.currentTimeMillis() + 2000;
+            while (System.currentTimeMillis() < end) {
+                String line = readLine(in);
+                if (line == null) break;
+                if (line.startsWith("a1 ")) {
+                    return line.toUpperCase(Locale.ROOT).contains(" OK ");
+                }
+            }
+            return false;
+        } finally {
+            if (socket != null) try { socket.close(); } catch (Throwable ignore) {}
+        }
+    }
+
+    private String readLine(InputStream in) throws IOException {
+        StringBuilder sb = new StringBuilder(128);
+        int b;
+        while ((b = in.read()) != -1) {
+            if (b == '\n') break;
+            if (b != '\r') sb.append((char)b);
+            if (sb.length() > 4096) break;
+        }
+        if (sb.length() == 0 && b == -1) return null;
+        return sb.toString();
+    }
+
+    private boolean isBasicFallbackEnabled() {
+        try {
+            String prop = System.getProperty("zpush.shim.basic.fallback");
+            if (prop != null && !prop.isEmpty()) {
+                return "1".equals(prop) || "true".equalsIgnoreCase(prop) || "yes".equalsIgnoreCase(prop);
+            }
+        } catch (Throwable ignore) {}
+        try {
+            String env = System.getenv("ZPUSH_SHIM_BASIC_FALLBACK");
+            if (env == null || env.isEmpty()) return true; // default ON (controls IMAP fallback)
+            return "1".equals(env) || "true".equalsIgnoreCase(env) || "yes".equalsIgnoreCase(env);
+        } catch (Throwable ignore) {}
+        return true;
+    }
+
+    private String getImapHost() {
+        try {
+            String prop = System.getProperty("zpush.shim.imap.host");
+            if (prop != null && !prop.isEmpty()) return prop;
+        } catch (Throwable ignore) {}
+        try {
+            String env = System.getenv("ZPUSH_SHIM_IMAP_HOST");
+            if (env != null && !env.isEmpty()) return env;
+        } catch (Throwable ignore) {}
+        return "127.0.0.1";
+    }
+
+    private int[] getImapPorts() {
+        String raw = null;
+        try { raw = System.getProperty("zpush.shim.imap.ports"); } catch (Throwable ignore) {}
+        if (raw == null || raw.isEmpty()) {
+            try { raw = System.getenv("ZPUSH_SHIM_IMAP_PORTS"); } catch (Throwable ignore) {}
+        }
+        if (raw == null || raw.isEmpty()) raw = "993,143"; // default
+        java.util.ArrayList<Integer> out = new java.util.ArrayList<>();
+        for (String p : raw.split(",")) {
+            String s = p.trim();
+            if (s.isEmpty()) continue;
+            try { out.add(Integer.parseInt(s)); } catch (NumberFormatException ignore) {}
+        }
+        if (out.isEmpty()) return new int[] { 993, 143 };
+        int[] arr = new int[out.size()];
+        for (int i = 0; i < out.size(); i++) arr[i] = out.get(i);
+        return arr;
     }
 
     private Account accountFromToken(String tokenStr) throws ServiceException {

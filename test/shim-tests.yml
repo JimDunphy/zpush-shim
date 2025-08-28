@@ -10,7 +10,7 @@ shim_paths:
 
 # Credentials for testing (use app password if 2FA is enabled)
 account: "user@example.com"
-password: "CHANGE_ME"
+password: "CHANGE_ME"		# or App Password
 protocol: "eas"
 
 # TLS verification for HTTPS endpoints
