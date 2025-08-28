@@ -2,6 +2,17 @@
 
 This guide provides system administrators with complete instructions for installing, configuring, and maintaining the Z-Push Java Shim that dramatically improves ActiveSync performance and fixes critical bugs.
 
+## Safe Deploy/Undeploy (At a Glance)
+
+- Single artifact: installs exactly one file — `/opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar`.
+- Isolated: runs as a Zimbra extension (no core JARs replaced; no schema/config changes).
+- Clean enable/disable:
+  - Deploy: `./deploy-shim.sh --deploy` then `su - zimbra -c 'zmmailboxdctl restart'`
+  - Undeploy: `./deploy-shim.sh --undeploy` then restart (moves to `/opt/zimbra/lib/ext-disabled/...`)
+- Zero‑risk preview: `./deploy-shim.sh --plan` (shows exactly what `--deploy` would do)
+- Quick status: `./deploy-shim.sh --status` (paths, endpoint ping, recent log lines)
+- Verify endpoint: `./deploy-shim.sh --verify` or `make verify-ping`
+
 ## Table of Contents
 1. [Overview](#overview)
 2. [Prerequisites](#prerequisites)
@@ -15,6 +26,11 @@ This guide provides system administrators with complete instructions for install
 10. [Uninstallation](#uninstallation)
 
 ## Overview
+
+One-file install, instant rollback, zero surprises:
+- One JAR: `/opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar` (no core JARs touched)
+- Instant rollback: `./deploy-shim.sh --undeploy` + restart
+- Loopback-only IMAP for app passwords; external IMAP can remain blocked
 
 ### What This Solves
 
