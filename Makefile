@@ -37,6 +37,9 @@ test-rest:
 test-rest-shim:
 	@$(MAKE) test-rest REST_CFG=test/tests-shim.yml
 
+test-rest-shim-auth:
+	@$(MAKE) test-rest REST_CFG=test/tests-shim-auth.yml
+
 run-dev:
 	@echo "Starting standalone dev server (no Zimbra required) ..."
 	ant run-dev

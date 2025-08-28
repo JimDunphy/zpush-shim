@@ -14,7 +14,7 @@ set -euo pipefail
 #
 # Typical flow (kept inline for one-step testing):
 curl -sS -c c.txt -H 'Content-Type: application/json' \
-      -d '{"Header":{},"Body":{"AuthRequest":{"_jsns":"urn:zimbraAccount","account":{"by":"name","_content":"jad@zanfellabs.com"},"password":"P?Nx9&Lp&z$HMJME"}}}' \
+      -d '{"Header":{},"Body":{"AuthRequest":{"_jsns":"urn:zimbraAccount","account":{"by":"name","_content":"user@example.com"},"password":"CHANGEME"}}}' \
       http://localhost:8080/service/soap | tee soap.json
 # Then call this script to complete shim auth.
 

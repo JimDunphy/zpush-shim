@@ -9,17 +9,20 @@ shim_paths:
   - "/service/zpush-shim"
 
 # Credentials for testing (use app password if 2FA is enabled)
-account: "jad@zanfellabs.com"
-password: "P?Nx9&Lp&z$HMJME"         # or app password
-#account: "user@example.com"
-#password: "CHANGE_ME"
+account: "user@example.com"
+password: "CHANGE_ME"
 protocol: "eas"
 
 # TLS verification for HTTPS endpoints
 verify_tls: false
 
+# Optional pre-login behavior for the harness: auto|always|never
+# - auto (default): attempt JSON-SOAP login; if it fails, continue quietly
+# - always: require JSON-SOAP login (prints WARN on failure)
+# - never: skip JSON-SOAP login entirely (recommended when using app passwords)
+soap_login: "never"
+
 # Optional preferences
 preferred_folder: "Inbox"
 messages_limit: 10
 getmessage_format: "html"   # "plain" or "html"
-

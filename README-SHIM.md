@@ -185,6 +185,28 @@ POST /service/extension/zpush-shim
 action=ping
 ```
 
+## App Password Authentication
+
+When 2FA is enabled, Zimbra evaluates app-specific passwords only for non-SOAP and non-HTTP-basic protocols. The shim intentionally validates app passwords via an IMAP LOGIN over loopback and issues a shim-scoped token on success. Subsequent calls use that token against JSON shim endpoints (no SOAP required).
+
+- Behavior: One-shot IMAP LOGIN to 127.0.0.1 (or configured host/ports) with short timeouts; no secrets are persisted.
+- Rationale: Aligns with Zimbra’s AuthMechanism rules and avoids brittle in-process classloading across versions.
+
+Environment toggles (env or JVM `-D` properties):
+- `ZPUSH_SHIM_BASIC_FALLBACK` (default: true) → enable IMAP validation
+- `ZPUSH_SHIM_IMAP_HOST` (default: `127.0.0.1`)
+- `ZPUSH_SHIM_IMAP_PORTS` (default: `993,143`)
+- `ZPUSH_SHIM_DEBUG_AUTH` (default: false)
+
+PHP backend behavior with shim
+
+- The Z-Push PHP backend calls the shim to validate user credentials (including app passwords) and then still performs a standard login flow for mailbox access (preferring REST-style shim endpoints for data). The shim token is a shim-session artifact; PHP maintains its own session context for mailbox access.
+
+Admin note (IMAP requirement)
+
+- IMAP must be enabled per-account in Zimbra for the current shim app-password flow to succeed (loopback only). External IMAP can remain disabled.
+- If IMAP is disabled per-account, app-password authenticate returns HTTP 401 and logs show an `imap-fallback ... result=NO` line.
+
 ## Development
 
 ### Building

@@ -38,6 +38,7 @@ shim_paths:
 account: "user@example.com"
 password: "APP_OR_USER_PASSWORD"
 verify_tls: false                    # true in production
+soap_login: "never"                 # auto|always|never (use "never" for app passwords)
 preferred_folder: "Inbox"
 messages_limit: 10
 getmessage_format: "html"
@@ -72,6 +73,11 @@ Example configs for the REST harness
   ```bash
   make test-rest REST_CFG=test/tests-shim.yml
   ```
+ - `test/tests-shim-auth.yml` contains two app-password checks (success/failure). Edit `username/password` first and run:
+   ```bash
+   make test-rest-shim-auth
+   ```
+   For app-password scenarios, set `soap_login: "never"` in the config to suppress the optional SOAP pre-login (SOAP rejects app passwords by design).
 
 ## Targets at a Glance
 - `make test-shim`: Runs the dedicated shim test script (`test_shim_endpoints.py`). Uses `test/shim-tests.yml` (edit for your host/creds as needed). Suitable for mailboxd or the standalone dev server.

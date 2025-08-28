@@ -124,6 +124,7 @@ def main():
     preferred_folder: str = cfg.get("preferred_folder", "Inbox")
     messages_limit: int = int(cfg.get("messages_limit", 10))
     getmessage_format: str = cfg.get("getmessage_format", "html")
+    soap_login_mode: str = str(cfg.get("soap_login", "auto")).strip().lower()  # auto|always|never
 
     require(base_url, "base_url is required in config")
     require(account and password, "account and password are required in config")
@@ -133,13 +134,15 @@ def main():
 
     # Optional: JSON-SOAP login first to set cookie and csrf header if enforced
     csrf = None
-    try:
-        csrf = zimbra_json_soap_login(session, base_url, verify_tls, account, password)
-        if csrf:
-            session.headers["X-Zimbra-Csrf-Token"] = csrf
-            print("[INFO] Obtained csrfToken via JSON-SOAP")
-    except Exception as e:
-        print(f"[WARN] SOAP login failed or not necessary: {e}")
+    if soap_login_mode != "never":
+        try:
+            csrf = zimbra_json_soap_login(session, base_url, verify_tls, account, password)
+            if csrf:
+                session.headers["X-Zimbra-Csrf-Token"] = csrf
+                print("[INFO] Obtained csrfToken via JSON-SOAP")
+        except Exception as e:
+            level = "WARN" if soap_login_mode == "always" else "INFO"
+            print(f"[{level}] SOAP login skipped: {e}")
 
     # Detect which shim path works
     shim_path = choose_shim_path(session, base_url, shim_paths, verify_tls)

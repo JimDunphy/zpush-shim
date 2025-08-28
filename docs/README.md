@@ -690,6 +690,34 @@ sudo rm -f /var/log/z-push/zimbra-*.log
 - **Z-Push Documentation:** https://z-push.org/
 - **Zimbra Documentation:** https://wiki.zimbra.com/
 
+## Shim Testing (Java Extension)
+
+If you deploy the optional Java shim (zpush-shim) on mailboxd, you can validate it with the included harness and Make targets:
+
+- Quick endpoint checks (generic harness):
+  - `make test-rest-shim` → ping/auth/getfolders/getmessages basic flow
+  - `make test-rest REST_CFG=test/tests-shim.yml` → same as above (explicit)
+- App-password scenarios (requires 2FA + app password):
+  - Edit `test/tests-shim-auth.yml` with a real `username` and `APP_PASSWORD_HERE`
+  - Run: `make test-rest-shim-auth`
+  - Expect: first test 200 with `{success:true}`, second test 401 containing `auth failed`
+- One-shot manual auth helpers (useful while iterating):
+  - `make auth-token` (SOAP login then shim authenticate via header token)
+  - `make auth-cookie` (cookie-based authenticate after SOAP login)
+  - `make auth-password` (username/app-password to shim; sets protocol for AuthContext)
+
+Note: The shim intentionally validates app passwords via IMAP over loopback (993/143) to follow Zimbra’s app‑password rules for non‑SOAP/non‑HTTP‑basic protocols. See README-SHIM.md for details and environment toggles (`ZPUSH_SHIM_*`).
+
+### PHP Backend Behavior With Shim
+
+When enabled in Z-Push, the PHP backend calls the shim to validate user credentials (including app passwords with 2FA) and then proceeds with its normal data requests (via shim endpoints). The shim token is only used by the shim; the PHP backend maintains its own session context for mailbox access. This provides reliable app‑password authentication without changing downstream data paths.
+
+Admin note (IMAP requirement)
+
+- IMAP must be enabled for the user account in Zimbra for the current shim app‑password flow to succeed, because the shim performs a loopback IMAP LOGIN to validate the password.
+- External IMAP can remain disabled; loopback (127.0.0.1) access is sufficient.
+- If IMAP is disabled per account, authenticate returns HTTP 401 and mailbox.log shows `imap-fallback ... result=NO` or a connection error.
+
 ## Success Indicators
 
 Your installation is successful when:
