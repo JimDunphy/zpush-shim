@@ -49,6 +49,8 @@ OPTIONS:
     --undeploy          Remove the extension from Zimbra (backup then remove)
     --restart           Restart Zimbra services
     --verify            Verify deployment
+    --plan              Dry-run: show exactly what --deploy would do
+    --status            Show install status (paths, file, logs, endpoint ping)
     --all               Build, deploy, restart, and verify
     
 EXAMPLES:
@@ -343,6 +345,77 @@ verify_deployment() {
     log_info "3. Monitor Z-Push logs for 'Java Shim' messages"
 }
 
+# Dry-run: Show what --deploy would do
+plan_actions() {
+    echo
+    log_info "Dry-run: showing deploy actions (no changes made)"
+    if [ -d "/opt/zimbra" ]; then
+        ZIMBRA_HOME="/opt/zimbra"
+    elif [ -d "/usr/local/zimbra" ]; then
+        ZIMBRA_HOME="/usr/local/zimbra"
+    else
+        log_error "Zimbra installation not found"
+        return 1
+    fi
+    EXTENSION_NAME="zpush-shim"
+    DEPLOY_DIR="$ZIMBRA_HOME/lib/ext/$EXTENSION_NAME"
+    JAR_FILE="dist/zpush-shim.jar"
+
+    echo "- Will create extension dir: $DEPLOY_DIR (root:root 755)"
+    echo "- Will copy JAR: $JAR_FILE -> $DEPLOY_DIR/zpush-shim.jar (root:root 444)"
+    echo "- Requires: su - zimbra -c 'zmmailboxdctl restart' to load the extension"
+    echo
+    if [ -f "$JAR_FILE" ]; then
+        log_info "JAR present: $JAR_FILE ($(stat -c '%s bytes, mtime=%y' "$JAR_FILE" 2>/dev/null || stat -f '%z bytes' "$JAR_FILE" 2>/dev/null))"
+    else
+        log_warning "JAR not found at $JAR_FILE. Run: ant clean jar"
+    fi
+}
+
+# Status: Show whether the extension is installed and responsive
+status_shim() {
+    if [ -d "/opt/zimbra" ]; then
+        ZIMBRA_HOME="/opt/zimbra"
+    elif [ -d "/usr/local/zimbra" ]; then
+        ZIMBRA_HOME="/usr/local/zimbra"
+    else
+        log_error "Zimbra installation not found"
+        return 1
+    fi
+    EXT_DIR="$ZIMBRA_HOME/lib/ext/zpush-shim"
+    JAR_PATH="$EXT_DIR/zpush-shim.jar"
+    echo
+    log_info "Extension directory: $EXT_DIR"
+    if [ -d "$EXT_DIR" ]; then
+        log_success "Present"
+    else
+        log_warning "Not present"
+    fi
+    log_info "JAR path: $JAR_PATH"
+    if [ -f "$JAR_PATH" ]; then
+        log_success "Present ($(stat -c '%s bytes, mtime=%y' "$JAR_PATH" 2>/dev/null || stat -f '%z bytes' "$JAR_PATH" 2>/dev/null))"
+    else
+        log_warning "Not present"
+    fi
+    # Quick endpoint check (best-effort)
+    if command -v curl >/dev/null 2>&1; then
+        SHIM_URL="http://127.0.0.1:8080/service/extension/zpush-shim"
+        RESP=$(curl -sS --max-time 5 -X POST -d 'action=ping' "$SHIM_URL" 2>/dev/null || true)
+        if [[ "$RESP" == *"\"status\":\"ok\""* ]]; then
+            log_success "Endpoint responds at $SHIM_URL"
+        else
+            log_warning "Endpoint did not return status=ok (mailboxd may need restart)"
+        fi
+    fi
+    # Recent log lines
+    LOG_FILE="$ZIMBRA_HOME/log/mailbox.log"
+    if [ -f "$LOG_FILE" ]; then
+        echo
+        log_info "Recent extension-related log lines (mailbox.log):"
+        tail -n 100 "$LOG_FILE" | egrep -i 'zpush|shim|extension|registered handler' | tail -n 20 || true
+    fi
+}
+
 # Main execution
 main() {
     echo -e "${BLUE}$SCRIPT_NAME v$SCRIPT_VERSION${NC}"
@@ -371,6 +444,12 @@ main() {
             ;;
         --verify)
             verify_deployment
+            ;;
+        --plan)
+            plan_actions
+            ;;
+        --status)
+            status_shim
             ;;
         --all)
             build_shim

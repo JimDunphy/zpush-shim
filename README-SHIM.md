@@ -239,6 +239,24 @@ Look for log entries containing "Java Shim" or "Shim".
 ./deploy-shim.sh --all
 ```
 
+### Safe Deploy/Undeploy
+
+- Single artifact: exactly one file is installed — `/opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar`.
+- Isolated: runs under Zimbra’s extension classloader; no core JARs are touched.
+- Clean enable/disable:
+  - `./deploy-shim.sh --deploy` → creates `/opt/zimbra/lib/ext/zpush-shim/` and copies the JAR.
+  - `./deploy-shim.sh --undeploy` → moves the whole extension dir to `/opt/zimbra/lib/ext-disabled/zpush-shim.bak.<timestamp>/`.
+  - Requires only `su - zimbra -c 'zmmailboxdctl restart'` to load/unload.
+- Zero‑risk preview: `./deploy-shim.sh --plan` shows exactly what `--deploy` would do without changing the system.
+- Quick status: `./deploy-shim.sh --status` prints installed path, JAR presence, recent log lines, and pings the endpoint.
+
+Verification
+```bash
+./deploy-shim.sh --verify           # checks JAR presence and pings /service/extension/zpush-shim
+make verify-ping                    # or a simple ping via Makefile
+tail -f /opt/zimbra/log/mailbox.log | grep -i shim
+```
+
 ### Option 2: Manual
 ```bash
 # Build

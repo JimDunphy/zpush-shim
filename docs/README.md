@@ -567,6 +567,14 @@ https://mail.yourdomain.com/service/preauth
 # Verify SSL settings if using HTTPS
 ```
 
+### Safe Deploy/Undeploy (Shim)
+
+- Single artifact is installed: `/opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar`.
+- Deploy: `./deploy-shim.sh --deploy` (then restart mailboxd)
+- Undeploy: `./deploy-shim.sh --undeploy` (moves to `/opt/zimbra/lib/ext-disabled/...`) and restart mailboxd
+- Dry-run: `./deploy-shim.sh --plan` (no changes; shows exactly what would happen)
+- Status: `./deploy-shim.sh --status` (prints paths, log hints, and pings the endpoint)
+
 #### 2. SSL Certificate Issues
 **Problem:** SSL verification errors
 
