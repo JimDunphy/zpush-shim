@@ -8,8 +8,8 @@ set -euo pipefail
 # - Stops on first HTTP 200 unless TRY_ALL=1 is set.
 # - Exits 0 if any protocol succeeds (HTTP 200), non-zero otherwise.
 
-USERNAME=${USERNAME:-test@example.com}
-PASSWORD=${PASSWORD:-CHANGEME}
+USERNAME=${USERNAME:-test@zanfellabs.com}
+PASSWORD=${PASSWORD:-FAQKHUOKMZLXIIME}
 BASE_URL=${BASE_URL:-http://localhost:8080}
 
 # Optional behavior toggles

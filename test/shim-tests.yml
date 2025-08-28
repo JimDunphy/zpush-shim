@@ -9,8 +9,10 @@ shim_paths:
   - "/service/zpush-shim"
 
 # Credentials for testing (use app password if 2FA is enabled)
-account: "user@example.com"
-password: "CHANGE_ME"		# or App Password
+account: "jad@zanfellabs.com"
+password: "P?Nx9&Lp&z$HMJME"         # or app password
+#account: "user@example.com"
+#password: "CHANGE_ME"
 protocol: "eas"
 
 # TLS verification for HTTPS endpoints
