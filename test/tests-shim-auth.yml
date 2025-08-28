@@ -1,0 +1,28 @@
+base_url: "http://localhost:8080"   # mailboxd; change to https://host if needed
+verify_tls: false
+soap_login: "never"                 # skip SOAP pre-login for app passwords
+
+defaults:
+  headers:
+    Content-Type: "application/x-www-form-urlencoded"
+
+tests:
+  - name: "Shim App Password: success"
+    method: POST
+    path: /service/extension/zpush-shim
+    # Replace with a real account and its app-specific password
+    body: "action=authenticate&username=user@example.com&password=APP_PASSWORD_HERE&protocol=eas"
+    expect:
+      status: 200
+      json:
+        success: true
+
+  - name: "Shim App Password: failure"
+    method: POST
+    path: /service/extension/zpush-shim
+    # Intentionally wrong password to verify failure path
+    body: "action=authenticate&username=user@example.com&password=WRONG_PASSWORD&protocol=eas"
+    expect:
+      status: 401
+      contains: "auth failed"
+
