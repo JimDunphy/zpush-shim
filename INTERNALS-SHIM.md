@@ -858,13 +858,13 @@ tail -f /opt/zimbra/log/mailbox.log | grep -i "zpush\|shim"
 **Shim Not Responding:**
 ```bash
 # Check if JAR is deployed
-ls -la /opt/zimbra/jetty/webapps/service/WEB-INF/lib/zpush-shim*
+ls -la /opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar
 
 # Check Zimbra service status
 su - zimbra -c "zmcontrol status"
 
-# Check servlet registration
-grep -r "zpush-shim" /opt/zimbra/jetty/webapps/service/WEB-INF/
+# Check extension registration (logs)
+grep -i "zpush-shim" /opt/zimbra/log/mailbox.log | tail -n 50
 ```
 
 **Authentication Failing:**

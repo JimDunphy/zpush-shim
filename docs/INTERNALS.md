@@ -1768,7 +1768,10 @@ Memory Usage           | High (XML parsing) | Low (JSON)        | 50-70% reducti
 **Deployment:**
 ```bash
 # Install shim as Zimbra extension
-cp zpush-shim.jar /opt/zimbra/jetty/webapps/service/WEB-INF/lib/
+mkdir -p /opt/zimbra/lib/ext/zpush-shim
+cp zpush-shim.jar /opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar
+chown root:root /opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar
+chmod 444 /opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar
 su - zimbra -c "zmmailboxdctl restart"
 
 # Shim runs at: http://localhost:8080/zpush-shim

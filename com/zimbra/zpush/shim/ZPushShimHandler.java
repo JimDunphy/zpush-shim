@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2025 Z-Push Zimbra Shim contributors
+ * Licensed under the MIT License. See LICENSE file for details.
+ */
 package com.zimbra.zpush.shim;
 
 import com.google.gson.Gson;
@@ -405,15 +409,27 @@ public class ZPushShimHandler extends ExtensionHttpHandler {
                         }
                     }
                 }
-                // If still not ok, try authAccount with HTTP protocol (helps with app-specific passwords)
+                // Try zsync protocol (non-interactive HTTP, app-password friendly)
                 if (!ok) {
                     try {
                         Class<?> protoCls = loadZimbraClass("com.zimbra.cs.account.AuthContext$Protocol");
-                        Object httpProto = java.lang.Enum.valueOf((Class)protoCls, "http");
+                        Object zsyncProto = java.lang.Enum.valueOf((Class)protoCls, "zsync");
+                        java.lang.reflect.Method m = provCls.getMethod("authAccount", Account.class, String.class, protoCls, Map.class);
+                        Object authTokenObj = m.invoke(prov, account, password, zsyncProto, ctx);
+                        ok = (authTokenObj != null);
+                        if (debug) { try { ZimbraLog.extensions.info("zpush-shim authenticate: try prov.authAccount ZSYNC -> ok=%s", String.valueOf(ok)); } catch (Throwable ignore) {} }
+                    } catch (Throwable ignore) {}
+                }
+
+                // If still not ok, try authAccount with HTTP-BASIC protocol (diagnostic; not app-password)
+                if (!ok) {
+                    try {
+                        Class<?> protoCls = loadZimbraClass("com.zimbra.cs.account.AuthContext$Protocol");
+                        Object httpProto = java.lang.Enum.valueOf((Class)protoCls, "http_basic");
                         java.lang.reflect.Method m = provCls.getMethod("authAccount", Account.class, String.class, protoCls, Map.class);
                         Object authTokenObj = m.invoke(prov, account, password, httpProto, ctx);
                         ok = (authTokenObj != null);
-                        if (debug) { try { ZimbraLog.extensions.info("zpush-shim authenticate: try prov.authAccount HTTP -> ok=%s", String.valueOf(ok)); } catch (Throwable ignore) {} }
+                        if (debug) { try { ZimbraLog.extensions.info("zpush-shim authenticate: try prov.authAccount HTTP_BASIC -> ok=%s", String.valueOf(ok)); } catch (Throwable ignore) {} }
                     } catch (Throwable ignore) {}
                 }
                 if (!ok) {
@@ -440,6 +456,17 @@ public class ZPushShimHandler extends ExtensionHttpHandler {
                 }
             } catch (Throwable t) {
                 ok = false;
+            }
+        }
+
+        // 2b) HTTP AutoDiscover probe fallback (validate via Protocol.zsync over HTTP)
+        if (!ok && account != null && isAutoDiscoverFallbackEnabled()) {
+            try {
+                boolean adOk = autodiscoverVerify(username, password);
+                try { ZimbraLog.extensions.info("zpush-shim authenticate: autodiscover-fallback result=%s", adOk ? "OK" : "NO"); } catch (Throwable ignore) {}
+                if (adOk) ok = true;
+            } catch (Throwable t) {
+                try { ZimbraLog.extensions.info("zpush-shim authenticate: autodiscover-fallback threw %s", t.getClass().getName()); } catch (Throwable ignore) {}
             }
         }
 
@@ -519,6 +546,93 @@ public class ZPushShimHandler extends ExtensionHttpHandler {
         }
         if (sb.length() == 0 && b == -1) return null;
         return sb.toString();
+    }
+
+    private boolean isAutoDiscoverFallbackEnabled() {
+        try {
+            String prop = System.getProperty("zpush.shim.autodiscover.fallback");
+            if (prop != null && !prop.isEmpty()) {
+                return "1".equals(prop) || "true".equalsIgnoreCase(prop) || "yes".equalsIgnoreCase(prop);
+            }
+        } catch (Throwable ignore) {}
+        try {
+            String env = System.getenv("ZPUSH_SHIM_AUTODISCOVER_FALLBACK");
+            if (env == null || env.isEmpty()) return true; // default ON
+            return "1".equals(env) || "true".equalsIgnoreCase(env) || "yes".equalsIgnoreCase(env);
+        } catch (Throwable ignore) {}
+        return true;
+    }
+
+    private java.util.List<String> getAutoDiscoverUrls() {
+        java.util.ArrayList<String> urls = new java.util.ArrayList<>();
+        String raw = null;
+        try { raw = System.getProperty("zpush.shim.autodiscover.urls"); } catch (Throwable ignore) {}
+        if (raw == null || raw.isEmpty()) { try { raw = System.getenv("ZPUSH_SHIM_AUTODISCOVER_URLS"); } catch (Throwable ignore) {} }
+        if (raw != null && !raw.isEmpty()) {
+            for (String p : raw.split(",")) {
+                String u = p.trim();
+                if (!u.isEmpty()) urls.add(u);
+            }
+        }
+        if (urls.isEmpty()) {
+            // Reasonable local defaults
+            urls.add("https://127.0.0.1/Autodiscover/Autodiscover.xml");
+            urls.add("https://127.0.0.1:8443/Autodiscover/Autodiscover.xml");
+            urls.add("http://127.0.0.1:8080/Autodiscover/Autodiscover.xml");
+        }
+        return urls;
+    }
+
+    private boolean autodiscoverVerify(String username, String password) throws Exception {
+        for (String url : getAutoDiscoverUrls()) {
+            try {
+                if (autodiscoverVerifyUrl(url, username, password)) return true;
+            } catch (Throwable t) {
+                // log and continue
+                try { ZimbraLog.extensions.info("zpush-shim authenticate: autodiscover try url=%s threw %s", url, t.getClass().getName()); } catch (Throwable ignore) {}
+            }
+        }
+        return false;
+    }
+
+    private boolean autodiscoverVerifyUrl(String urlStr, String username, String password) throws Exception {
+        java.net.URL url = new java.net.URL(urlStr);
+        javax.net.ssl.HttpsURLConnection https = null;
+        java.net.HttpURLConnection conn;
+        if ("https".equalsIgnoreCase(url.getProtocol())) {
+            SSLContext sc = SSLContext.getInstance("TLS");
+            sc.init(null, new TrustManager[]{ new X509TrustManager() {
+                public void checkClientTrusted(X509Certificate[] chain, String authType) {}
+                public void checkServerTrusted(X509Certificate[] chain, String authType) {}
+                public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+            }}, new SecureRandom());
+            javax.net.ssl.HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+            javax.net.ssl.HttpsURLConnection.setDefaultHostnameVerifier(new javax.net.ssl.HostnameVerifier() {
+                public boolean verify(String s, javax.net.ssl.SSLSession sslSession) { return true; }
+            });
+            https = (javax.net.ssl.HttpsURLConnection) url.openConnection();
+            conn = https;
+        } else {
+            conn = (java.net.HttpURLConnection) url.openConnection();
+        }
+        conn.setConnectTimeout(2500);
+        conn.setReadTimeout(2500);
+        conn.setRequestMethod("POST");
+        conn.setDoOutput(true);
+        conn.setRequestProperty("Content-Type", "text/xml; charset=UTF-8");
+        String creds = username + ":" + password;
+        String b64 = java.util.Base64.getEncoder().encodeToString(creds.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        conn.setRequestProperty("Authorization", "Basic " + b64);
+
+        // Minimal body; AutoDiscover authenticates before body parsing
+        byte[] body = "<Autodiscover/>".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        try (OutputStream os = conn.getOutputStream()) { os.write(body); os.flush(); }
+        int code = conn.getResponseCode();
+        // Treat 401 as invalid credentials; anything else (200/403/etc) as pass for credential check
+        boolean ok = (code != 401);
+        try { ZimbraLog.extensions.info("zpush-shim authenticate: autodiscover url=%s http=%d -> %s", urlStr, code, ok ? "OK" : "NO"); } catch (Throwable ignore) {}
+        try { conn.disconnect(); } catch (Throwable ignore) {}
+        return ok;
     }
 
     private boolean isBasicFallbackEnabled() {

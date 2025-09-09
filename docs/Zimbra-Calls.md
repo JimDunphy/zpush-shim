@@ -853,7 +853,7 @@ GET /zpush-shim/folders/257/messages?authToken=xxx&q=after:-30d%20is:unread
 ```
 
 ### Zimbra Integration
-- **Deployment:** `$ZIMBRA_HOME/jetty/webapps/service/WEB-INF/lib/zpush-shim.jar`
+- **Deployment:** `/opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar`
 - **URL:** `http://localhost:8080/service/extension/zpush-shim`
 - **Security:** Internal-only access (no external exposure needed)
 

@@ -73,11 +73,25 @@ Example configs for the REST harness
   ```bash
   make test-rest REST_CFG=test/tests-shim.yml
   ```
- - `test/tests-shim-auth.yml` contains two app-password checks (success/failure). Edit `username/password` first and run:
+- `test/tests-shim-auth.yml` contains app-password checks (success/failure) and an optional zsync/AutoDiscover-path success. Edit `username/password` first and run:
    ```bash
    make test-rest-shim-auth
    ```
    For app-password scenarios, set `soap_login: "never"` in the config to suppress the optional SOAP pre-login (SOAP rejects app passwords by design).
+
+- `test/tests-autodiscover.yml` provides a Basic-auth smoke probe against `/Autodiscover/Autodiscover.xml`.
+  - Replace the `Authorization` header placeholders with base64(`user@example.com:APP_PASSWORD`).
+  - Expect a non-401 for valid credentials (status may be 200 or 403 depending on account features), and a 401 for wrong credentials.
+  ```bash
+  make test-rest-autodiscover
+  ```
+
+To exercise the shim’s zsync/AutoDiscover paths (and not IMAP fallback), disable IMAP fallback or IMAP per-account on the server before running:
+```
+# on mailboxd JVM (e.g., in /opt/zimbra/conf/localconfig.xml or setenv for testing)
+-Dzpush.shim.basic.fallback=false    # or env ZPUSH_SHIM_BASIC_FALLBACK=0
+-Dzpush.shim.autodiscover.fallback=true  # or env ZPUSH_SHIM_AUTODISCOVER_FALLBACK=1 (default)
+```
 
 ## Targets at a Glance
 - `make test-shim`: Runs the dedicated shim test script (`test_shim_endpoints.py`). Uses `test/shim-tests.yml` (edit for your host/creds as needed). Suitable for mailboxd or the standalone dev server.
@@ -93,6 +107,77 @@ Note: The default `test/tests.yml` contains example endpoints and will 404 unles
 - `test/shim-auth-token.sh`: Performs SOAP login and authenticates to the shim using header `X-Zimbra-Auth-Token` in one go. Useful when you want a single command during testing.
 - `test/shim-auth-cookie.sh`: Cookie-based authenticate after a SOAP login (respects CSRF when present).
 - `test/shim-auth-password.sh`: Username/password authenticate (URL-encoded; prompts for password when not provided via env).
+- `test/verify_credentials.sh`: Standalone check for credential behavior:
+  - Tries SOAP AuthRequest (expects primary password).
+  - Tries AutoDiscover Basic (zsync path, supports app passwords).
+  - Classifies the provided secret based on outcomes and exits non-zero only if both fail.
+  ```bash
+  chmod +x test/verify_credentials.sh
+  SHIM_TEST_BASE_URL=https://mail.example.com \
+  SHIM_TEST_USER=user@example.com \
+  SHIM_TEST_PASSWORD='secret' \
+  ./test/verify_credentials.sh [--insecure]
+  ```
+
+Make helper
+```bash
+make verify-credentials \
+  SHIM_TEST_BASE_URL=https://mail.example.com \
+  SHIM_TEST_USER=user@example.com \
+  SHIM_TEST_PASSWORD='secret' \
+  INSECURE=1
+```
+
+Run shim REST tests with your env `SHIM_TEST_BASE_URL`:
+```bash
+make test-rest-shim-env \
+  SHIM_TEST_BASE_URL=https://mail.example.com
+```
+This overrides the `base_url` in `test/tests-shim.yml` at runtime.
+
+## Environment file (recommended)
+
+Create a local environment file and source it so all tests use the same settings:
+
+```bash
+cp test/env.example env.txt
+${EDITOR:-vi} env.txt     # edit values
+source env.txt
+
+# Now you can run any of the tests without repeating args
+make verify-credentials
+make test-rest-shim-live
+make test-rest-autodiscover
+make get-token-preauth
+```
+
+Variables used by tests:
+- `SHIM_TEST_BASE_URL` (required): e.g., `https://mail.example.com`
+- `SHIM_TEST_USER` (required)
+- `SHIM_TEST_PASSWORD` (required)
+- `SHIM_TEST_PASSWORD_BAD` (optional; negative AutoDiscover test; defaults to `wrong`)
+- `SHIM_TEST_PREAUTH_KEY` (optional; for `make get-token-preauth`)
+- `SHIM_TEST_VERIFY_TLS` (optional; 1/0 to override YAML verify flag)
+
+- `test/check_autodiscover.sh`: One-step AutoDiscover check (zsync acceptance). Returns non-401 when credentials are valid on the zsync path.
+  ```bash
+  chmod +x test/check_autodiscover.sh
+  SHIM_TEST_BASE_URL=https://mail.example.com \
+  SHIM_TEST_USER=user@example.com \
+  SHIM_TEST_PASSWORD='secret' \
+  ./test/check_autodiscover.sh [--insecure]
+  # or
+  make verify-autodiscover SHIM_TEST_BASE_URL=... SHIM_TEST_USER=... SHIM_TEST_PASSWORD=... INSECURE=1
+  ```
+
+Preauth helper (token acquisition)
+```bash
+make get-token-preauth \
+  SHIM_TEST_BASE_URL=https://mail.example.com \
+  SHIM_TEST_USER=user@example.com \
+  SHIM_TEST_PREAUTH_KEY=hex_preAuthKey_from_zmprov_gdpak \
+  INSECURE=1
+```
 
 Recommendation
 - Keep using the harness for CI-style runs.

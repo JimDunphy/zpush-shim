@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, json, subprocess, shlex, time
+import sys, json, subprocess, shlex, time, os
 from typing import Any, Dict
 try:
     import yaml
@@ -17,6 +17,25 @@ def deep_get(d: Dict[str, Any], key: str, default=None):
         cur = cur[part]
     return cur
 
+def expand_vars(val, caps: Dict[str, Any]):
+    """Expand ${var} in a string using captures or environment variables.
+    If val is a dict or list, expand recursively.
+    """
+    if isinstance(val, str):
+        out = val
+        # Replace ${var} tokens
+        # Simple approach: iterate over known caps and env
+        for k, v in caps.items():
+            out = out.replace('${%s}' % k, str(v))
+        for k, v in os.environ.items():
+            out = out.replace('${%s}' % k, v)
+        return out
+    elif isinstance(val, dict):
+        return {k: expand_vars(v, caps) for k, v in val.items()}
+    elif isinstance(val, list):
+        return [expand_vars(v, caps) for v in val]
+    return val
+
 def get_totp_from_cmd(cmd: str) -> str:
     out = subprocess.check_output(shlex.split(cmd), timeout=5)
     return out.decode().strip()
@@ -28,8 +47,8 @@ def zimbra_login(session: requests.Session, base_url: str, verify_tls: bool, aut
       - csrfToken (returned in response), needed for POST/PUT/DELETE
     Supports optional 2FA (TOTP).
     """
-    account = auth_cfg.get("account")
-    password = auth_cfg.get("password")
+    account = auth_cfg.get("account") or os.environ.get("SHIM_TEST_USER")
+    password = auth_cfg.get("password") or os.environ.get("SHIM_TEST_PASSWORD")
     totp_code = auth_cfg.get("totp_code")
     totp_cmd = auth_cfg.get("totp_cmd")
     trusted_device = bool(auth_cfg.get("trusted_device", False))
@@ -79,8 +98,13 @@ def zimbra_login(session: requests.Session, base_url: str, verify_tls: bool, aut
     return csrf
 
 def run_tests(cfg: Dict[str, Any]) -> int:
-    base_url = cfg.get("base_url", "").rstrip("/")
-    verify_tls = bool(cfg.get("verify_tls", True))
+    base_url = (os.environ.get("SHIM_TEST_BASE_URL") or cfg.get("base_url", "")).rstrip("/")
+    # Allow SHIM_TEST_VERIFY_TLS to override verify flag ("0"/"false"/"no" -> False)
+    env_vtls = os.environ.get("SHIM_TEST_VERIFY_TLS")
+    if env_vtls is not None:
+        verify_tls = str(env_vtls).lower() not in {"0", "false", "no"}
+    else:
+        verify_tls = bool(cfg.get("verify_tls", True))
 
     defaults = cfg.get("defaults", {})
     default_headers = defaults.get("headers", {}) or {}
@@ -98,13 +122,15 @@ def run_tests(cfg: Dict[str, Any]) -> int:
         csrf_token = zimbra_login(session, base_url, verify_tls, auth_cfg)
 
     passed = 0; failed = 0; t0 = time.time()
+    captures: Dict[str, Any] = {}
 
     for ix, t in enumerate(tests, 1):
         name = t.get("name", f"test_{ix}")
         method = (t.get("method", "GET") or "GET").upper()
         path = t.get("path", "")
-        url = path if path.startswith("http") else f"{base_url}{path}"
-        headers = {**default_headers, **(t.get("headers") or {})}
+        # Expand variables in path and headers using captures/env
+        url = path if path.startswith("http") else f"{base_url}{expand_vars(path, captures)}"
+        headers = expand_vars({**default_headers, **(t.get("headers") or {})}, captures)
 
         # If mutating method, include CSRF header when we have it
         if method in {"POST", "PUT", "PATCH", "DELETE"} and csrf_token:
@@ -114,9 +140,9 @@ def run_tests(cfg: Dict[str, Any]) -> int:
         data_kw = {}
         if body is not None:
             if headers.get("Content-Type", "").startswith("application/json") or isinstance(body, dict):
-                data_kw["json"] = body
+                data_kw["json"] = expand_vars(body, captures)
             else:
-                data_kw["data"] = body
+                data_kw["data"] = expand_vars(body, captures)
 
         expect = t.get("expect", {}) or {}
         exp_status = expect.get("status")
@@ -154,6 +180,16 @@ def run_tests(cfg: Dict[str, Any]) -> int:
                 # Avoid backslashes inside f-string expressions (Py3.6 restriction)
                 preview = (text[:200] or "").replace("\n", "\\n")
                 print(f"       body: {preview}...")
+
+            # Capture variables from JSON if requested
+            cap = t.get("capture") or {}
+            if cap:
+                try:
+                    j = resp.json()
+                    for dest, src in cap.items():
+                        captures[dest] = deep_get(j, src, j.get(src))
+                except Exception:
+                    pass
 
         except requests.RequestException as e:
             failed += 1

@@ -187,12 +187,28 @@ action=ping
 
 ## App Password Authentication
 
-When 2FA is enabled, Zimbra evaluates app-specific passwords only for non-SOAP and non-HTTP-basic protocols. The shim intentionally validates app passwords via an IMAP LOGIN over loopback and issues a shim-scoped token on success. Subsequent calls use that token against JSON shim endpoints (no SOAP required).
+When 2FA is enabled, Zimbra evaluates app-specific passwords only for non-SOAP and non-HTTP-basic protocols. The shim follows this order:
 
-- Behavior: One-shot IMAP LOGIN to 127.0.0.1 (or configured host/ports) with short timeouts; no secrets are persisted.
-- Rationale: Aligns with Zimbra’s AuthMechanism rules and avoids brittle in-process classloading across versions.
+1) Internal (in-process) attempts via Zimbra APIs
+- `AuthProvider.authenticate(Account,String,Map)`
+- `Provisioning.authAccount(Account,String, Protocol.zsync, Map)` ← non-interactive HTTP
+- `Provisioning.authenticate(Account,String,Map)` (boolean form, if present)
+- `Provisioning.authAccount(Account,String, Protocol.http_basic, Map)` (diagnostic only)
+- `Provisioning.authAccount(Account,String, Protocol.imap|pop3, Map)`
+
+2) HTTP AutoDiscover probe (loopback)
+- POST to `/Autodiscover/Autodiscover.xml` on loopback with Basic Auth.
+- Treat HTTP 401 as invalid credentials; non-401 (200/403/etc.) as valid credentials.
+- Uses trust-all TLS only for loopback probe; configurable URLs.
+
+3) IMAP loopback fallback
+- One-shot IMAP LOGIN to 127.0.0.1 (or configured host/ports) with short timeouts; no mail data fetched.
+
+Subsequent calls use the issued shim-scoped token against JSON shim endpoints (no SOAP required for data).
 
 Environment toggles (env or JVM `-D` properties):
+- `ZPUSH_SHIM_AUTODISCOVER_FALLBACK` (default: true) → enable HTTP AutoDiscover credential probe
+- `ZPUSH_SHIM_AUTODISCOVER_URLS` (CSV) → override autodiscover URLs (e.g. `https://127.0.0.1/Autodiscover/Autodiscover.xml,http://127.0.0.1:8080/Autodiscover/Autodiscover.xml`)
 - `ZPUSH_SHIM_BASIC_FALLBACK` (default: true) → enable IMAP validation
 - `ZPUSH_SHIM_IMAP_HOST` (default: `127.0.0.1`)
 - `ZPUSH_SHIM_IMAP_PORTS` (default: `993,143`)
@@ -202,10 +218,10 @@ PHP backend behavior with shim
 
 - The Z-Push PHP backend calls the shim to validate user credentials (including app passwords) and then still performs a standard login flow for mailbox access (preferring REST-style shim endpoints for data). The shim token is a shim-session artifact; PHP maintains its own session context for mailbox access.
 
-Admin note (IMAP requirement)
+Notes
 
-- IMAP must be enabled per-account in Zimbra for the current shim app-password flow to succeed (loopback only). External IMAP can remain disabled.
-- If IMAP is disabled per-account, app-password authenticate returns HTTP 401 and logs show an `imap-fallback ... result=NO` line.
+- AutoDiscover may return 403 if ZimbraSync/EWS features are disabled on the account; the shim treats any non-401 response as "credentials valid" for the purposes of app-password verification.
+- IMAP fallback remains the most version-agnostic validator and can be disabled via `ZPUSH_SHIM_BASIC_FALLBACK=0` if desired.
 
 ## Development
 
@@ -231,6 +247,13 @@ define('LOGLEVEL', LOGLEVEL_DEBUG);
 ```
 
 Look for log entries containing "Java Shim" or "Shim".
+
+## Z-Push Workaround (No-Shim Auth)
+
+Z-Push can authenticate users without the shim by combining AutoDiscover Basic (accepts app passwords via `Protocol.zsync`) and domain preauth to obtain an auth token for SOAP/REST.
+
+- See: `docs/ZPUSH-AUTODISCOVER-PREAUTH.md` for end-to-end steps and cURL examples.
+- This can unblock 2FA/app-password deployments while the shim remains valuable for performance and folder/REST reliability.
 
 ## Deployment Options
 

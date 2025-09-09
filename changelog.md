@@ -2,6 +2,29 @@
 
 This document lists the changes introduced during the recent iteration, with reasons and impacts, so contributors and admins can see what was added and why.
 
+## 2025-09-09 (1.0.1 — versioning, test UX, zsync docs)
+
+### Overview
+- Goal: Make runtime version discoverable, clarify Makefile test targets (mock vs. live), and explicitly document/acknowledge the zsync-first auth flow with AutoDiscover and IMAP fallback.
+
+### Versioning
+- Bumped extension version to 1.0.1 in Ant `build.xml` (manifest `Implementation-Version`).
+- Ping now reports the JAR manifest version at runtime (reads `Implementation-Version`); dev server reports `dev`.
+
+### Make/Test UX
+- Grouped Makefile help by environment (Mock vs Live) and added clearer echo messages for shim tests.
+- Added `test-rest-shim-mock` alias and more explicit guidance for `test-rest-shim-env` vs `test-rest-shim-live`.
+
+### Auth Flow (zsync / AutoDiscover / IMAP)
+- Reaffirmed the intended order for 2FA app passwords: prefer `Protocol.zsync`, then AutoDiscover probe, then IMAP validation as last resort.
+- Documented toggles: `ZPUSH_SHIM_AUTODISCOVER_FALLBACK`, `ZPUSH_SHIM_AUTODISCOVER_URLS`, `ZPUSH_SHIM_BASIC_FALLBACK`, `ZPUSH_SHIM_IMAP_HOST`, `ZPUSH_SHIM_IMAP_PORTS`.
+- Cross-referenced docs: `README-SHIM.md` (App Password Authentication), `docs/PROTOCOL_AUTH_BEHAVIOR.md`, and `docs/ZPUSH-AUTODISCOVER-PREAUTH.md`.
+
+### Why
+- Version visibility helps confirm what’s deployed and aids support.
+- Clearer Make targets reduce confusion when SHIM_TEST_* env variables are present.
+- The zsync-first approach ensures app passcodes work reliably with 2FA accounts.
+
 ## 2025-08-26 (Zimbra 10 hardening, docs + tools)
 
 ### Overview

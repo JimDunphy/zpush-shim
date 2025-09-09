@@ -26,3 +26,16 @@ tests:
       status: 401
       contains: "auth failed"
 
+  # Optional: Exercise zsync/AutoDiscover paths by disabling IMAP fallback or IMAP on the account.
+  # Before running, on the server set:
+  #   ZPUSH_SHIM_BASIC_FALLBACK=0 (or -Dzpush.shim.basic.fallback=false)
+  #   ZPUSH_SHIM_AUTODISCOVER_FALLBACK=1 (default true)
+  # Or disable IMAP for the test account.
+  - name: "Shim App Password: success (zsync/AutoDiscover path)"
+    method: POST
+    path: /service/extension/zpush-shim
+    body: "action=authenticate&username=user@example.com&password=APP_PASSWORD_HERE&protocol=eas&debug=1"
+    expect:
+      status: 200
+      json:
+        success: true

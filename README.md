@@ -102,15 +102,17 @@ sudo nano /path/to/z-push/config.php
 curl -X POST -d "action=ping" http://localhost:8080/service/extension/zpush-shim
 ```
 
-### Option 2: Using Pre-built JAR
+### Option 2: Using Pre-built JAR (manual extension deploy)
 
 ```bash
-# 1. Copy JAR to Zimbra
-sudo cp zpush-shim-1.0.0.jar /opt/zimbra/jetty/webapps/service/WEB-INF/lib/
-sudo chown zimbra:zimbra /opt/zimbra/jetty/webapps/service/WEB-INF/lib/zpush-shim-1.0.0.jar
+# 1. Copy JAR to Zimbra extension directory
+sudo mkdir -p /opt/zimbra/lib/ext/zpush-shim
+sudo cp dist/zpush-shim.jar /opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar
+sudo chown root:root /opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar
+sudo chmod 444 /opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar
 
-# 2. Restart Zimbra
-su - zimbra -c "zmcontrol restart"
+# 2. Restart mailboxd to load the extension
+su - zimbra -c "zmmailboxdctl restart"
 
 # 3. Configure and test as above
 ```
@@ -144,10 +146,9 @@ echo "Zimbra home: $ZIMBRA_HOME"
 
 # Deploy as an extension (recommended)
 sudo ./deploy-shim.sh --deploy
-sudo chown zimbra:zimbra $ZIMBRA_HOME/jetty/webapps/service/WEB-INF/lib/zpush-shim-1.0.0.jar
 
 # Verify deployment
-ls -la $ZIMBRA_HOME/jetty/webapps/service/WEB-INF/lib/zpush-shim*
+ls -la /opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar
 ```
 
 ### Step 3: Restart Zimbra Services
@@ -246,7 +247,7 @@ define('ZIMBRA_SHIM_URL', 'http://zimbra-server.internal:8080/service/extension/
 
 ```bash
 # Check JAR file is present
-ls -la /opt/zimbra/jetty/webapps/service/WEB-INF/lib/zpush-shim*
+ls -la /opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar
 
 # Check file permissions
 # Should be: zimbra:zimbra with 644 permissions
@@ -366,7 +367,7 @@ Solutions:
 su - zimbra -c "zmcontrol status"
 
 # Check if JAR is properly deployed
-ls -la /opt/zimbra/jetty/webapps/service/WEB-INF/lib/zpush-shim*
+ls -la /opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar
 
 # Check Zimbra logs for startup errors
 tail -f /opt/zimbra/log/mailbox.log | grep -i "zpush\|shim\|error"
@@ -517,14 +518,14 @@ su - zimbra -c "zmcontrol -v"
 cp /usr/share/z-push/src/config.php /backup/z-push-config.$(date +%Y%m%d).php
 
 # Backup shim JAR
-cp /opt/zimbra/jetty/webapps/service/WEB-INF/lib/zpush-shim-1.0.0.jar \
+cp /opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar \
    /backup/zpush-shim-$(date +%Y%m%d).jar
 ```
 
 **Recovery Procedure:**
 ```bash
 # Restore from backup
-cp /backup/zpush-shim-YYYYMMDD.jar /opt/zimbra/jetty/webapps/service/WEB-INF/lib/zpush-shim-1.0.0.jar
+cp /backup/zpush-shim-YYYYMMDD.jar /opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar
 cp /backup/z-push-config-YYYYMMDD.php /usr/share/z-push/src/config.php
 
 # Restart services
@@ -550,12 +551,13 @@ curl -X POST -d "action=ping" http://localhost:8080/service/extension/zpush-shim
 ```bash
 # Before Zimbra update:
 # 1. Backup shim JAR
-cp /opt/zimbra/jetty/webapps/service/WEB-INF/lib/zpush-shim-1.0.0.jar /backup/
+cp /opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar /backup/
 
 # After Zimbra update:
 # 1. Redeploy shim JAR
-cp /backup/zpush-shim-1.0.0.jar /opt/zimbra/jetty/webapps/service/WEB-INF/lib/
-chown zimbra:zimbra /opt/zimbra/jetty/webapps/service/WEB-INF/lib/zpush-shim-1.0.0.jar
+cp /backup/zpush-shim-1.0.0.jar /opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar
+chown root:root /opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar
+chmod 444 /opt/zimbra/lib/ext/zpush-shim/zpush-shim.jar
 
 # 2. Restart and verify
 su - zimbra -c "zmcontrol restart"
@@ -632,3 +634,16 @@ The Z-Push Java Shim provides dramatic performance improvements and critical bug
   - Then prompts to restart mailboxd as the `zimbra` user.
 
 For most installations, the shim provides immediate and significant improvements with minimal risk and maintenance overhead.
+
+## License
+
+This project is licensed under the MIT License.
+
+```
+/*
+ * Copyright (c) 2025 Z-Push Zimbra Shim contributors
+ * Licensed under the MIT License. See LICENSE file for details.
+ */
+```
+
+See the `LICENSE` file at the repository root for the full text.

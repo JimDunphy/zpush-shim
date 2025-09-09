@@ -17,7 +17,7 @@
     
     <!-- Project properties -->
     <property name="extension.name" value="zpush-shim"/>
-    <property name="extension.version" value="1.0.0"/>
+    <property name="extension.version" value="1.0.1"/>
     <property name="src.dir" value="."/>
     <property name="build.dir" value="build"/>
     <property name="lib.dir" value="lib"/>
@@ -70,10 +70,9 @@
         <delete dir="${dist.dir}"/>
     </target>
     
-    <!-- Download dependencies -->
+    <!-- Optional: download dependencies for off-Zimbra dev builds -->
     <target name="deps" depends="init">
-        <echo message="Downloading Gson dependency..."/>
-        <!-- Download Gson JAR if not present -->
+        <echo message="(Optional) Downloading Gson dependency for local dev builds..."/>
         <get src="https://repo1.maven.org/maven2/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar"
              dest="${lib.dir}/gson-2.10.1.jar"
              skipexisting="true"
@@ -88,9 +87,17 @@
         <echo message=""/>
     </target>
     
+    <!-- Detect local gson jar for dev builds -->
+    <condition property="gson.available">
+        <and>
+            <available file="${lib.dir}/gson-2.10.1.jar"/>
+        </and>
+    </condition>
+
     <!-- Compile for development machines (no Zimbra required) -->
-    <target name="compile-compat" depends="init,deps,warn-zimbra" unless="zimbra.available">
+    <target name="compile-compat" depends="init,warn-zimbra" unless="zimbra.available">
         <echo message="Compiling Compat/DevServer (no Zimbra required)..."/>
+        <fail unless="gson.available" message="Gson not found. Run 'ant deps' once or place gson-2.10.1.jar in lib/"/>
         <javac srcdir="${src.dir}"
                destdir="${build.dir}"
                classpath="${lib.dir}/gson-2.10.1.jar"
@@ -109,8 +116,9 @@
     </target>
 
     <!-- Always compile DevServer so run-dev works even if Zimbra is installed -->
-    <target name="compile-devserver" depends="init,deps">
+    <target name="compile-devserver" depends="init">
         <echo message="Compiling DevServer (standalone) ..."/>
+        <fail unless="gson.available" message="Gson not found. Run 'ant deps' once or place gson-2.10.1.jar in lib/"/>
         <javac srcdir="${src.dir}"
                destdir="${build.dir}"
                classpath="${lib.dir}/gson-2.10.1.jar"
@@ -126,7 +134,7 @@
     </target>
 
     <!-- Compile for Zimbra servers (full extension) -->
-    <target name="compile-full" depends="init,deps" if="zimbra.available">
+    <target name="compile-full" depends="init" if="zimbra.available">
         <echo message="Compiling full extension (Zimbra detected at ${zimbra.home})..."/>
         <javac srcdir="${src.dir}"
                destdir="${build.dir}"
@@ -171,20 +179,29 @@
         </manifest>
     </target>
     
-    <!-- Create JAR file -->
-    <target name="jar" depends="compile-full,manifest">
+    <!-- Create core JAR (classes + manifest) -->
+    <target name="jar-core" depends="compile-full,manifest">
         <echo message="Creating JAR file: ${jar.file}"/>
-        <jar destfile="${jar.file}" 
+        <jar destfile="${jar.file}"
              manifest="${build.dir}/META-INF/MANIFEST.MF">
             <fileset dir="${build.dir}">
                 <include name="**/*.class"/>
                 <include name="**/*.properties"/>
                 <include name="META-INF/**"/>
             </fileset>
-            <!-- Include Gson JAR inside our JAR -->
+        </jar>
+    </target>
+
+    <!-- Optionally embed gson for off-Zimbra dev builds -->
+    <target name="jar-gson" if="gson.available" depends="jar-core">
+        <echo message="Including gson into JAR for local dev build..."/>
+        <jar destfile="${jar.file}" update="true">
             <zipfileset src="${lib.dir}/gson-2.10.1.jar" excludes="META-INF/**"/>
         </jar>
-        
+    </target>
+
+    <!-- Final jar target (core + optional gson) -->
+    <target name="jar" depends="jar-core,jar-gson">
         <echo message=""/>
         <echo message="=== Z-Push Shim Extension Built Successfully ==="/>
         <echo message="JAR file: ${jar.file}"/>
@@ -250,7 +267,7 @@
         <echo message=""/>
         <echo message="Available targets:"/>
         <echo message="  ant clean    - Clean build artifacts"/>
-        <echo message="  ant deps     - Download dependencies"/>
+        <echo message="  ant deps     - (Optional) Download Gson for local dev builds"/>
         <echo message="  ant compile  - Compile Java sources"/>
         <echo message="  ant jar      - Create JAR file (default)"/>
         <echo message="  ant deploy   - Deploy to Zimbra (requires Zimbra installation)"/>
@@ -259,7 +276,8 @@
         <echo message=""/>
         <echo message="CROSS-MACHINE DEVELOPMENT:"/>
         <echo message="  This build script supports development on machines without Zimbra installed."/>
-        <echo message="  - Use 'ant compile' to check syntax (may show warnings about missing JARs)"/>
+        <echo message="  - First-time only: run 'ant deps' to fetch gson into lib/ (or place it manually)"/>
+        <echo message="  - Use 'ant compile' to build locally"/>
         <echo message="  - Use 'ant jar' to create the extension JAR"/>
         <echo message="  - Copy the JAR to a Zimbra server for deployment and testing"/>
         <echo message=""/>

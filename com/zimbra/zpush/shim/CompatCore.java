@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2025 Z-Push Zimbra Shim contributors
+ * Licensed under the MIT License. See LICENSE file for details.
+ */
 package com.zimbra.zpush.shim;
 
 import java.util.*;
@@ -12,7 +16,7 @@ public final class CompatCore {
     public static Map<String, Object> ping() {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("status", "ok");
-        out.put("version", "1.0.0");
+        out.put("version", VersionUtil.getVersion());
         out.put("timestamp", System.currentTimeMillis());
         return out;
     }

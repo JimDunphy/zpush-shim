@@ -1,7 +1,9 @@
+/*
+ * Copyright (c) 2025 Z-Push Zimbra Shim contributors
+ * Licensed under the MIT License. See LICENSE file for details.
+ */
 package com.zimbra.zpush.shim;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonSyntaxException;
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 

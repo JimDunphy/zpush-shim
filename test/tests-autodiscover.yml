@@ -1,0 +1,42 @@
+base_url: "https://mail.example.com"   # overridden by SHIM_TEST_BASE_URL
+verify_tls: false
+
+defaults:
+  headers:
+    Content-Type: "text/xml; charset=UTF-8"
+
+# AutoDiscover credential probe using env variables:
+#   SHIM_TEST_BASE_URL, SHIM_TEST_USER, SHIM_TEST_PASSWORD, SHIM_TEST_PASSWORD_BAD (optional)
+# The Makefile target test-rest-autodiscover sets BASIC_USER_PASS/BASIC_USER_WRONG.
+
+tests:
+  - name: "AutoDiscover: valid app password (non-401)"
+    method: POST
+    path: /Autodiscover/Autodiscover.xml
+    headers:
+      Authorization: "Basic ${BASIC_USER_PASS}"
+    body: |
+      <?xml version="1.0" encoding="utf-8"?>
+      <Autodiscover xmlns="http://schemas.microsoft.com/exchange/autodiscover/mobilesync/requestschema/2006">
+        <Request>
+          <EMailAddress>${SHIM_TEST_USER}</EMailAddress>
+          <AcceptableResponseSchema>http://schemas.microsoft.com/exchange/autodiscover/outlook/responseschema/2006a</AcceptableResponseSchema>
+        </Request>
+      </Autodiscover>
+    # Intentionally do not set expect.status to allow 200/403/503 as success (auth accepted).
+
+  - name: "AutoDiscover: wrong password (401)"
+    method: POST
+    path: /Autodiscover/Autodiscover.xml
+    headers:
+      Authorization: "Basic ${BASIC_USER_WRONG}"
+    body: |
+      <?xml version="1.0" encoding="utf-8"?>
+      <Autodiscover xmlns="http://schemas.microsoft.com/exchange/autodiscover/mobilesync/requestschema/2006">
+        <Request>
+          <EMailAddress>${SHIM_TEST_USER}</EMailAddress>
+          <AcceptableResponseSchema>http://schemas.microsoft.com/exchange/autodiscover/outlook/responseschema/2006a</AcceptableResponseSchema>
+        </Request>
+      </Autodiscover>
+    expect:
+      status: 401
