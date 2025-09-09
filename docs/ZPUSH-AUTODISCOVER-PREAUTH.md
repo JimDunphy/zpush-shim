@@ -88,6 +88,16 @@ Notes:
 - The raw user password is used only for AutoDiscover Basic. The sanitized password remains for the existing SOAP path if fallback occurs.
 - We request the Outlook response schema (2006a). Authentication happens before schema handling; non‑401 is sufficient to confirm acceptance.
 
+## AutoDiscover Availability (FOSS vs Network Edition)
+
+- The AutoDiscover servlet is present in both Zimbra FOSS and Network Edition; it is not the “ActiveSync feature” itself.
+- AutoDiscover’s authentication step (HTTP Basic with `Protocol.zsync`) runs before any feature gating. This means:
+  - On FOSS, AutoDiscover still authenticates credentials and you will see non‑401 when the secret is valid.
+  - If the requested response schema implies EWS/MobileSync, the servlet may return 403 (feature not enabled) or 503 (schema not available) after authentication — and that is fine for our purposes.
+- Our flow only relies on the authentication outcome (non‑401). We do not depend on the provisioning payload. After the auth check we immediately mint a mailbox token via SOAP `<preauth>`.
+
+Admin tip (FOSS): You can use AutoDiscover for the auth step even without Network Edition/MobileSync. If you prefer to limit exposure, restrict `/Autodiscover/Autodiscover.xml` to your Z‑Push hosts at the proxy/LB, or route it internally.
+
 ## What changed in `zimbra.php` (optional and backward‑compatible)
 
 - A small, optional block in `Logon()`:
