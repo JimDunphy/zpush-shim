@@ -177,6 +177,14 @@ In this project directory:
 
 ## 6. Troubleshooting Checklist
 
+-   **`curl` Tests for External Endpoints**: Before diving deep, use these `curl` commands from any external machine to check if the entire stack is responding correctly. This tests the public DNS, firewall rules, and the Zimbra NGINX proxy configuration.
+    ```bash
+    # This command should return HTTP/1.1 401 Unauthorized or similar, but not a 404 or connection error.
+    curl -Ik https://mail.example.com/Microsoft-Server-ActiveSync
+
+    # This command should return HTTP/1.1 200 OK and an XML response.
+    curl -sD- https://autodiscover.example.com/autodiscover/Autodiscover.xml -o /dev/null
+    ```
 -   **502/504 Bad Gateway**: The Zimbra proxy can't talk to the container. Check that the container is running (`docker ps`) and that the ports match.
 -   **Shim-specific Errors**: If Z-Push logs show "falling back to SOAP" or other shim-related errors, the issue is with the REST shim connection.
     -   **Verify the shim is deployed**: Check for `zpush-shim.jar` on the mailboxd server.
