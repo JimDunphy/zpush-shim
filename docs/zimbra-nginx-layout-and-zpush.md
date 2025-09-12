@@ -199,6 +199,14 @@ In this project directory:
 
 ### 7.2. Jetty CGI vs. php-fpm Container
 
-This container-based `php-fpm` approach is favored over the older Jetty CGI method for several reasons:
--   **Pros**: Better isolation from `mailboxd`, allows for independent resource tuning (PHP memory vs. Java heap), and a smaller blast radius if Z-Push fails.
--   **Cons**: Adds Docker as a dependency and requires edits to the NGINX templates.
+For an administrator deciding between this container-based approach and the traditional method of installing Z-Push via Jetty's CGI handler, the advantages of this `php-fpm` model are significant, especially concerning performance and stability.
+
+-   **Pros**:
+    -   **Efficient Process Management**: `php-fpm` maintains a pool of persistent worker processes. This completely avoids the high overhead of the CGI model, where a new PHP process is wastefully started from scratch for every single incoming request.
+    -   **Superior Timeout & Long-Polling Handling**: ActiveSync heavily relies on long-polling, where a device can hold a `Sync` request open for minutes waiting for new mail. In the `php-fpm` model, a dedicated worker process handles this long-lived request efficiently, without impacting the server's ability to process other, shorter requests. The old CGI model would tie up a valuable Jetty thread on the `mailboxd` server for the entire duration, risking thread exhaustion and causing instability for core Zimbra services.
+    -   **Resource Isolation (Stability)**: By running in a container, the Z-Push PHP processes have their own dedicated memory and CPU limits. A bug in Z-Push or a memory-intensive operation (like syncing a huge attachment) will not consume all of `mailboxd`'s Java heap space and crash the entire mail server. The "blast radius" of any problem is contained.
+    -   **Independent Tuning**: You can tune the resources for Z-Push (PHP memory, worker counts) completely independently of the resources for Zimbra's Java services.
+
+-   **Cons**:
+    -   **Added Complexity**: Adds Docker as a dependency to the stack.
+    -   **NGINX Edits Required**: Requires modifying the standard Zimbra NGINX templates, as documented in this guide.
