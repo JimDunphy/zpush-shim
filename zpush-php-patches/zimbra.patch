@@ -1,5 +1,5 @@
---- original-zpush/zimbra.php	2025-08-27 09:53:51.434585458 -0700
-+++ zimbra.php	2025-08-28 11:09:25.255448794 -0700
+--- a/zimbra.php
++++ b/zimbra.php
 @@ -1,5 +1,5 @@
  <?php
 -$GLOBALS['revision'] = "74"; // Used to output the script version to the debug log
@@ -7,7 +7,7 @@
  /***********************************************
  * File          :   zimbra.php
  * Revision      :   74 (20-Aug-2025)
-@@ -597,6 +597,12 @@
+@@ -597,6 +597,12 @@ class BackendZimbra implements IBackend {
      protected $_xFwdForForMailboxLog;        
  	protected $_zimbraId = "";
  	protected $_waitSetId = "";
@@ -20,7 +20,7 @@
  	protected $_highestSeqKnown = "";
  
      protected $_changetoken = "";
-@@ -698,6 +704,114 @@
+@@ -698,6 +704,114 @@ class BackendZimbra implements IBackend {
          $this->changesSink = false;
          $this->changesSinkFolders = array();
          $this->changesSinkStores = array();
@@ -135,7 +135,7 @@
      }
  
  
-@@ -1005,15 +1119,33 @@
+@@ -1005,15 +1119,33 @@ class BackendZimbra implements IBackend {
              $returnJSON = false;
              ZLog::Write(LOGLEVEL_DEBUG, 'Zimbra->Logon(): ' .  'ReturnJSON = false');		   
          }
