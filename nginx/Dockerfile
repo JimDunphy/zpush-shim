@@ -11,8 +11,8 @@ ENV NGINX_WORKER_PROCESSES=auto
 # tini as a lightweight init system
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-    nginx vim \
-    php-fpm php-cli php-xml php-curl php-mbstring php-soap php-zip \
+    nginx vim telnet iputils-ping patch \
+    php-fpm php-cli php-xml php-curl php-mbstring php-soap php-zip php-intl \
     ca-certificates curl wget tar tini gettext-base \
  && rm -rf /var/lib/apt/lists/*
 
@@ -56,8 +56,16 @@ RUN set -e && \
     echo "Cleaning up..." && \
     rm -f z-push.tar.gz zpushzimbra.tar.gz
 
+# Apply Z-Push shim patch
+COPY patches/zimbra.patch /tmp/
+RUN echo "Applying Z-Push shim patch..." && \
+    cd /var/www/zpush/backend/zimbra && \
+    patch -p1 < /tmp/zimbra.patch && \
+    echo "Shim patch applied successfully" && \
+    rm /tmp/zimbra.patch
+
 # Prepare additional filesystem directories needed at runtime
-RUN mkdir -p /run/php /data/config /data/state /data/log
+RUN mkdir -p /run/php /data/config /data/state /data/log /var/www/zpush/backend/zimbra
 
 # Set correct ownership for the web server user (www-data on Debian)
 # This is critical to prevent permission errors
@@ -70,11 +78,11 @@ RUN chmod +x /entrypoint.sh \
  && rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default || true
 
 # Expose the port the container will listen on
-EXPOSE 8080
+EXPOSE 9073
 
 # Add a healthcheck to ensure the service is running correctly
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
-  CMD curl -fsS http://127.0.0.1:8080/healthz || exit 1
+  CMD curl -fsS http://127.0.0.1:9073/healthz || exit 1
 
 # Set the entrypoint for the container
 ENTRYPOINT ["/usr/bin/tini","--","/entrypoint.sh"]

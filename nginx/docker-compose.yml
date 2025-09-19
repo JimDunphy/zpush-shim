@@ -4,8 +4,7 @@ services:
     build:
       context: .
     image: ${ZPUSH_IMAGE:-local/zpush:latest}
-    ports:
-      - "127.0.0.1:${ZPUSH_HTTP_PORT:-9073}:8080"
+    network_mode: host
     environment:
       - PHP_MEMORY_LIMIT=${PHP_MEMORY_LIMIT:-256M}
       - PHP_UPLOAD_MAX_FILESIZE=${PHP_UPLOAD_MAX_FILESIZE:-50M}
@@ -13,13 +12,20 @@ services:
       - PHP_MAX_EXECUTION_TIME=${PHP_MAX_EXECUTION_TIME:-3600}
       - PHP_MAX_INPUT_TIME=${PHP_MAX_INPUT_TIME:-3600}
       - NGINX_CLIENT_MAX_BODY_SIZE=${NGINX_CLIENT_MAX_BODY_SIZE:-50m}
+      - ZIMBRA_URL=${ZIMBRA_URL:-http://localhost:8080}
+      - ZIMBRA_SSL_VERIFYPEER=${ZIMBRA_SSL_VERIFYPEER:-false}
+      - ZIMBRA_SSL_VERIFYHOST=${ZIMBRA_SSL_VERIFYHOST:-false}
+      - ZIMBRA_USE_JAVA_SHIM=${ZIMBRA_USE_JAVA_SHIM:-false}
+      - ZIMBRA_SHIM_URL=${ZIMBRA_SHIM_URL:-http://localhost:8080/service/extension/zpush-shim}
     volumes:
       - ./zpush/config:/data/config
       - ./zpush/state:/data/state
       - ./zpush/log:/data/log
+    # extra_hosts:  # Bridge networking mode
+    #   - "zimbra-host:host-gateway"  # Bridge networking mode
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9073/healthz || exit 1"]
       interval: 30s
       timeout: 3s
       retries: 3
