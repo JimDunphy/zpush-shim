@@ -68,15 +68,16 @@ The Java Shim runs inside Zimbra's existing Jetty servlet container and provides
 
 ### System Requirements
 - **Zimbra Collaboration Suite**: OSE or Network Edition
-- **Z-Push 2.7+**: Already installed and working
+- **Z-Push 2.7+**: Automatically installed via Docker container
 - **Java 11+**: Usually included with Zimbra
-- **Maven 3.6+**: For building (if not using pre-built JAR)
+- **Apache Ant**: For building (Zimbra's official build system)
+- **Docker and Docker Compose**: For Z-Push container deployment
 
 ### Supported Configurations
-- **Zimbra OSE**: 8.8.15+ (fully supported)
-- **Zimbra Network Edition**: 9.0+ (compatible)
+- **Zimbra OSE**: 10.0+ (fully supported - tested with 10.0 and 10.1)
+- **Zimbra Network Edition**: 10.0+ (compatible - already has ActiveSync)
 - **Z-Push**: 2.7.0+ (tested with Release 74)
-- **Operating Systems**: Linux (CentOS, Ubuntu, RHEL, SLES)
+- **Operating Systems**: Zimbra-supported Linux distributions (CentOS, RHEL, Ubuntu LTS)
 
 ### Network Requirements
 - **Internal communication**: Shim communicates with Zimbra on localhost:8080
