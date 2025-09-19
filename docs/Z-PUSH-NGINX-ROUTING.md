@@ -68,14 +68,18 @@ This file contains:
 
 ## Deployment Steps
 
-### 1. Copy Files to Zimbra Host
+### 1. Apply Template Patches
 ```bash
-# Copy our modified templates and include file
-rsync -av /home/jad/openai/zimbra74/nginx/opt/zimbra/config/nginx/ /opt/zimbra/config/nginx/
+# Backup existing templates
+./manage.sh --backup-templates
+
+# Apply nginx routing patches to templates
+./manage.sh --patch-templates-clean
 ```
 
 ### 2. Restart Zimbra Proxy
 ```bash
+# Restart proxy to apply template changes
 su - zimbra -c "zmproxyctl restart"
 ```
 

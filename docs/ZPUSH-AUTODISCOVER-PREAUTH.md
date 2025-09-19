@@ -172,14 +172,14 @@ Create a patch of your edited `zimbra.php` so maintainers can audit and apply ea
 
 Using git:
 ```bash
-git diff -- zimbra74/zimbra.php > zimbra.patch
+git diff -- zimbra.php > zimbra.patch
 ```
 
 Using plain `diff`:
 ```bash
-cp zimbra74/zimbra.php zimbra74/zimbra.php.bak
-# (edit zimbra74/zimbra.php to include the AutoDiscover+Preauth block)
-diff -u zimbra74/zimbra.php.bak zimbra74/zimbra.php > zimbra.patch
+cp zimbra.php zimbra.php.bak
+# (edit zimbra.php to include the AutoDiscover+Preauth block)
+diff -u zimbra.php.bak zimbra.php > zimbra.patch
 ```
 
 Apply / rollback on target:

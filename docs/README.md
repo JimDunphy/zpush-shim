@@ -134,9 +134,9 @@ cd zimbra
 
 # Copy backend files to this directory
 # (Replace with your actual file locations)
-sudo cp /path/to/zimbra74/*.php .
-sudo cp /path/to/zimbra74/INSTALL .
-sudo cp /path/to/zimbra74/"Release Notes.txt" .
+sudo cp /path/to/zpush-backend/*.php .
+sudo cp /path/to/zpush-backend/INSTALL .
+sudo cp /path/to/zpush-backend/"Release Notes.txt" .
 ```
 
 ### Step 2: Install Dependencies
