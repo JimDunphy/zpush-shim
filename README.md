@@ -1,6 +1,12 @@
 # Z-Push Java Shim - Administrator Installation Guide
+This guide provides system administrators with complete instructions for installing, configuring, and maintaining the Z-Push Java Shim that dramatically improves ActiveSync performance and fixes critical bugs. 
 
-This guide provides system administrators with complete instructions for installing, configuring, and maintaining the Z-Push Java Shim that dramatically improves ActiveSync performance and fixes critical bugs.
+## Note ##
+I have been testing this shim since August 2025 on my iPhone and still use it to this day, and throughout that time it has performed as well as—if not faster than—the Zimbra Network Edition implementation which is also on my iPhone. That still surprises me, but the results have been consistent.
+
+This project originally existed because Z-Push and the FOSS 2FA implementation had an authentication issue related to application passwords, which prevented ActiveSync from working correctly. That issue has since been resolved, and Z-Push now works properly with FOSS 2FA. As a result, this shim is no longer necessary, and I am discontinuing active development.
+
+One pleasant discovery from this project was how fast Z-Push performs on our servers. If you're evaluating ActiveSync support, Z-Push is still worth considering. The included nginx Docker container can run stock Z-Push with a small change to the environment file, allowing you to use it directly without the shim.
 
 ## Safe Deploy/Undeploy (At a Glance)
 
